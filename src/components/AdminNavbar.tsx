@@ -1,0 +1,316 @@
+import { A, useLocation } from "@solidjs/router";
+import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
+
+import type { AdminMeResponse } from "~/lib/admin";
+import { shortenWalletAddress } from "~/lib/wallet/ethereum";
+
+const featuredLinks = [
+  { label: "Assets", href: "/" },
+  { label: "About", href: "/about" },
+] as const;
+
+function SearchIcon() {
+  return (
+    <svg viewBox="0 0 18 18" aria-hidden="true">
+      <path
+        d="M15.75 15.75L11.6386 11.6386"
+        fill="none"
+        stroke="currentColor"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="1.5"
+      />
+      <path
+        d="M7.75 13.25C10.7875 13.25 13.25 10.7875 13.25 7.75C13.25 4.7125 10.7875 2.25 7.75 2.25C4.7125 2.25 2.25 4.7125 2.25 7.75C2.25 10.7875 4.7125 13.25 7.75 13.25Z"
+        fill="none"
+        stroke="currentColor"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="1.5"
+      />
+    </svg>
+  );
+}
+
+function InfoIcon() {
+  return (
+    <svg viewBox="0 0 18 18" aria-hidden="true">
+      <path
+        d="M9 1C4.5889 1 1 4.5889 1 9C1 13.4111 4.5889 17 9 17C13.4111 17 17 13.4111 17 9C17 4.5889 13.4111 1 9 1ZM9.75 12.75C9.75 13.1641 9.4141 13.5 9 13.5C8.5859 13.5 8.25 13.1641 8.25 12.75V9.5H7.75C7.3359 9.5 7 9.1641 7 8.75C7 8.3359 7.3359 8 7.75 8H8.5C9.1895 8 9.75 8.5605 9.75 9.25V12.75ZM9 6.75C8.448 6.75 8 6.301 8 5.75C8 5.199 8.448 4.75 9 4.75C9.552 4.75 10 5.199 10 5.75C10 6.301 9.552 6.75 9 6.75Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
+function ChevronDownIcon() {
+  return (
+    <svg viewBox="0 0 12 12" aria-hidden="true">
+      <polyline
+        fill="none"
+        points="1.75 4.25 6 8.5 10.25 4.25"
+        stroke="currentColor"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="1.5"
+      />
+    </svg>
+  );
+}
+
+function MenuIcon() {
+  return (
+    <svg viewBox="0 0 18 18" aria-hidden="true">
+      <path
+        d="M15.75,9.75H2.25c-.414,0-.75-.336-.75-.75s.336-.75,.75-.75H15.75c.414,0,.75,.336,.75,.75s-.336,.75-.75,.75Z"
+        fill="currentColor"
+      />
+      <path
+        d="M15.75,4.5H2.25c-.414,0-.75-.336-.75-.75s.336-.75,.75-.75H15.75c.414,0,.75,.336,.75,.75s-.336,.75-.75,.75Z"
+        fill="currentColor"
+      />
+      <path
+        d="M15.75,15H2.25c-.414,0-.75-.336-.75-.75s.336-.75,.75-.75H15.75c.414,0,.75,.336,.75,.75s-.336,.75-.75,.75Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
+function getWalletSummary(profile: AdminMeResponse) {
+  const walletAddress = profile.user.wallet?.wallet_address;
+
+  if (walletAddress) {
+    return shortenWalletAddress(walletAddress);
+  }
+
+  return "Admin connected";
+}
+
+function isCurrentRoute(currentPath: string, href: string) {
+  if (href === "/") {
+    return currentPath === "/";
+  }
+
+  return currentPath.startsWith(href);
+}
+
+interface AdminNavbarProps {
+  profile: AdminMeResponse | null;
+  adminDrawerOpen?: boolean;
+  onToggleAdminDrawer?: () => void;
+  onOpenAuth?: () => void;
+  onLogout?: () => void;
+}
+
+export default function AdminNavbar(props: AdminNavbarProps) {
+  const location = useLocation();
+  const [isAccountMenuOpen, setAccountMenuOpen] = createSignal(false);
+  let accountMenuRef: HTMLDivElement | undefined;
+
+  createEffect(() => {
+    if (!isAccountMenuOpen()) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+
+      if (!(target instanceof Node)) {
+        return;
+      }
+
+      if (accountMenuRef?.contains(target)) {
+        return;
+      }
+
+      setAccountMenuOpen(false);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setAccountMenuOpen(false);
+      }
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+
+    onCleanup(() => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    });
+  });
+
+  createEffect(() => {
+    location.pathname;
+    setAccountMenuOpen(false);
+  });
+
+  const toggleAdminDrawer = () => {
+    setAccountMenuOpen(false);
+    props.onToggleAdminDrawer?.();
+  };
+
+  const signOut = () => {
+    setAccountMenuOpen(false);
+    props.onLogout?.();
+  };
+
+  return (
+    <header class="pm-navbar pm-admin-navbar">
+      <nav class="pm-navbar__nav" aria-label="Primary">
+        <div class="pm-navbar__border" aria-hidden="true" />
+
+        <div class="pm-navbar__top-row">
+          <div class="pm-navbar__brand-wrap">
+            <A class="pm-brand" aria-label="Guardrail Admin home" href="/">
+              <span class="pm-brand__badge">
+                <img src="/favicon.ico" alt="" aria-hidden="true" />
+              </span>
+              <span class="pm-brand__name">Guardrail Admin</span>
+            </A>
+          </div>
+
+          <div class="pm-navbar__search-group">
+            <form class="pm-search-form" role="search" onSubmit={event => event.preventDefault()}>
+              <div class="pm-search-field">
+                <span class="pm-search-field__icon">
+                  <SearchIcon />
+                </span>
+                <input
+                  class="pm-search-field__input"
+                  type="search"
+                  aria-label="Search assets"
+                  autoComplete="off"
+                  placeholder="Search assets..."
+                />
+                <kbd class="pm-search-field__kbd">/</kbd>
+              </div>
+            </form>
+
+            <A class="pm-link-action pm-link-action--admin" href="/about">
+              <InfoIcon />
+              <span>How it works</span>
+            </A>
+          </div>
+
+          <div class="pm-navbar__account">
+            <div class="pm-navbar__auth">
+              <Show
+                when={props.profile}
+                fallback={
+                  <>
+                    <button class="pm-button pm-button--ghost" type="button" onClick={props.onOpenAuth}>
+                      Admin access
+                    </button>
+                    <button
+                      class="pm-button pm-button--primary"
+                      type="button"
+                      onClick={props.onOpenAuth}
+                    >
+                      Connect wallet
+                    </button>
+                  </>
+                }
+              >
+                {currentProfile => (
+                  <>
+                    <button
+                      class={`pm-menu-trigger pm-menu-trigger--admin${
+                        props.adminDrawerOpen ? " pm-menu-trigger--open" : ""
+                      }`}
+                      type="button"
+                      aria-label="Toggle admin drawer"
+                      aria-expanded={props.adminDrawerOpen ? "true" : "false"}
+                      onClick={toggleAdminDrawer}
+                    >
+                      <MenuIcon />
+                    </button>
+
+                    <div class="pm-account-session" ref={accountMenuRef}>
+                      <button
+                        class={`pm-account-trigger pm-account-trigger--admin${
+                          isAccountMenuOpen() ? " pm-account-trigger--open" : ""
+                        }`}
+                        type="button"
+                        aria-label="Open admin account menu"
+                        aria-expanded={isAccountMenuOpen()}
+                        aria-haspopup="menu"
+                        onClick={() => setAccountMenuOpen(open => !open)}
+                      >
+                        <div class="pm-account-avatar pm-account-avatar--fallback">
+                          <span class="pm-account-avatar__initials">A</span>
+                        </div>
+                        <span class="pm-admin-navbar__session-copy">
+                          <span class="pm-admin-navbar__session-value">
+                            {getWalletSummary(currentProfile())}
+                          </span>
+                        </span>
+                        <span class="pm-account-trigger__chevron" aria-hidden="true">
+                          <ChevronDownIcon />
+                        </span>
+                      </button>
+
+                      <Show when={isAccountMenuOpen()}>
+                        <div class="pm-account-menu pm-account-menu--admin" role="menu" aria-label="Admin account menu">
+                          <div class="pm-account-menu__header">
+                            <div class="pm-account-avatar pm-account-avatar--fallback">
+                              <span class="pm-account-avatar__initials">A</span>
+                            </div>
+                            <div class="pm-account-menu__identity">
+                              <p class="pm-account-menu__name">Admin</p>
+                              <p class="pm-account-menu__meta">{currentProfile().user.wallet?.wallet_address}</p>
+                            </div>
+                          </div>
+
+                          <div class="pm-admin-navbar__menu-pills">
+                            <span class="pm-market-chip">Monad #{currentProfile().monad_chain_id}</span>
+                            <span class="pm-market-chip">Admin session</span>
+                          </div>
+
+                          <div class="pm-account-menu__divider" aria-hidden="true" />
+
+                          <button
+                            class="pm-account-menu__item pm-account-menu__item--danger"
+                            type="button"
+                            role="menuitem"
+                            onClick={signOut}
+                          >
+                            Disconnect
+                          </button>
+                        </div>
+                      </Show>
+                    </div>
+                  </>
+                )}
+              </Show>
+            </div>
+          </div>
+        </div>
+
+        <div class="pm-navbar__bottom-row">
+          <div class="pm-tabs-shell">
+            <div class="pm-tabs-fade pm-tabs-fade--left" aria-hidden="true" />
+
+            <div class="pm-tabs-scroll" role="navigation" aria-label="Admin routes">
+              <For each={featuredLinks}>
+                {link => (
+                  <A
+                    class={`pm-tab${isCurrentRoute(location.pathname, link.href) ? " pm-tab--active" : ""}`}
+                    href={link.href}
+                    aria-current={isCurrentRoute(location.pathname, link.href) ? "page" : undefined}
+                  >
+                    <span>{link.label}</span>
+                  </A>
+                )}
+              </For>
+            </div>
+
+            <div class="pm-tabs-fade pm-tabs-fade--right" aria-hidden="true" />
+          </div>
+        </div>
+      </nav>
+    </header>
+  );
+}
