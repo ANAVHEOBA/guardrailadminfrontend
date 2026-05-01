@@ -10,6 +10,9 @@ export interface InjectedWallet {
   provider: EthereumProvider;
 }
 
+export type WalletKind = "injected" | "walletconnect";
+export type DiscoveredWallet = InjectedWallet;
+
 export function getInjectedEthereumProvider(): EthereumProvider | null {
   if (typeof window === "undefined" || !("ethereum" in window)) {
     return null;
@@ -89,6 +92,14 @@ export async function signPersonalMessage(
   }
 
   return signature;
+}
+
+export async function signWalletMessage(
+  message: string,
+  account: string,
+  provider: EthereumProvider | null = getInjectedEthereumProvider(),
+): Promise<string> {
+  return signPersonalMessage(message, account, provider);
 }
 
 export function shortenWalletAddress(address: string): string {
