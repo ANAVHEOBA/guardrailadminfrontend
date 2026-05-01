@@ -1,13 +1,13 @@
 import { Show, createSignal } from "solid-js";
 import { useNavigate } from "@solidjs/router";
 
-import { useAdminWalletAuth } from "~/lib/hooks/useAdminWalletAuth";
+import { useAdminAuth } from "~/lib/admin-auth-context";
 
 import AdminNavbar from "./AdminNavbar";
 import AdminWorkspace from "./AdminWorkspace";
 
 export default function AdminConsole() {
-  const auth = useAdminWalletAuth({ restoreOnMount: true });
+  const auth = useAdminAuth();
   const navigate = useNavigate();
   const [adminDrawerOpen, setAdminDrawerOpen] = createSignal(false);
 
@@ -22,8 +22,7 @@ export default function AdminConsole() {
         adminDrawerOpen={adminDrawerOpen()}
         onToggleAdminDrawer={() => setAdminDrawerOpen(open => !open)}
         onOpenAuth={() => {
-          // Trigger wallet connection
-          void auth.connectWithInjectedWallet();
+          auth.openAuthDialog();
         }}
         onLogout={auth.logout}
       />

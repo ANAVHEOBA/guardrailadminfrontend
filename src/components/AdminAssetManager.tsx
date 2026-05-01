@@ -1,4 +1,4 @@
-import { createSignal, For, Show } from "solid-js";
+import { For, Show, createSignal, onMount, type JSX } from "solid-js";
 
 import {
   assetClient,
@@ -9,14 +9,42 @@ import {
   type AssetResponse,
   type ListAssetsQuery,
 } from "~/lib";
+import { useAdminAuth } from "~/lib/admin-auth-context";
 import { getErrorMessage } from "~/lib/api";
 import { useAsyncTask } from "~/lib/hooks/useAsyncTask";
-import {
-  readOptionalBoolean,
-  readOptionalInteger,
-  readOptionalText,
-  readRequiredText,
-} from "./admin-form-utils";
+import { shortenWalletAddress } from "~/lib/wallet/ethereum";
+
+import AdminModal from "./AdminModal";
+import { readOptionalBoolean, readOptionalInteger, readOptionalText, readRequiredText } from "./admin-form-utils";
+
+type AssetModalView = "factory" | "catalog" | "register-type" | "create-asset" | "pricing";
+
+interface PricingDraft {
+  asset_address: string;
+  subscription_price: string;
+  redemption_price: string;
+}
+
+interface ActionCardProps {
+  actionLabel: string;
+  endpoint: string;
+  title: string;
+  copy: string;
+  detail: string;
+  onOpen: () => void;
+  tone?: "default" | "admin";
+}
+
+const DEFAULT_LIST_QUERY: ListAssetsQuery = {
+  limit: 12,
+  offset: 0,
+};
+
+const EMPTY_PRICING_DRAFT: PricingDraft = {
+  asset_address: "",
+  subscription_price: "",
+  redemption_price: "",
+};
 
 function formatTimestamp(value: string) {
   const parsed = new Date(value);
@@ -28,73 +56,180 @@ function formatTimestamp(value: string) {
   return parsed.toLocaleString();
 }
 
-function AssetCard(props: { asset: AssetResponse }) {
+function formatWalletLabel(walletAddress: string | null | undefined) {
+  if (!walletAddress) {
+    return "Admin wallet";
+  }
+
+  return shortenWalletAddress(walletAddress);
+}
+
+function buildPricingDraft(asset?: AssetResponse | null): PricingDraft {
+  if (!asset) {
+    return { ...EMPTY_PRICING_DRAFT };
+  }
+
+  return {
+    asset_address: asset.asset_address,
+    subscription_price: asset.price_per_token,
+    redemption_price: asset.redemption_price_per_token,
+  };
+}
+
+function ActionCard(props: ActionCardProps) {
+  return (
+    <button
+      class={`pm-asset-action-card${
+        props.tone === "admin" ? " pm-asset-action-card--admin" : ""
+      }`}
+      type="button"
+      onClick={props.onOpen}
+    >
+      <div class="pm-asset-action-card__header">
+        <p class="pm-asset-action-card__eyebrow">{props.endpoint}</p>
+        <span class="pm-asset-action-card__pill">{props.actionLabel}</span>
+      </div>
+
+      <div class="pm-asset-action-card__body">
+        <h3 class="pm-asset-action-card__title">{props.title}</h3>
+        <p class="pm-asset-action-card__copy">{props.copy}</p>
+      </div>
+
+      <div class="pm-asset-action-card__footer">
+        <span class="pm-asset-action-card__detail">{props.detail}</span>
+        <span class="pm-asset-action-card__cta">Open modal</span>
+      </div>
+    </button>
+  );
+}
+
+function AssetCard(props: {
+  asset: AssetResponse;
+  onManagePricing?: (asset: AssetResponse) => void;
+}) {
   const asset = () => props.asset;
   const fallbackLetter = () => asset().symbol.charAt(0).toUpperCase() || "A";
 
   return (
-    <div class="pm-compact-card-shell">
-      <article class="pm-compact-card">
-        <div class="pm-compact-card__header">
-          <div class="pm-compact-card__art">
-            <Show
-              when={asset().image_url}
-              fallback={<span class="pm-compact-card__art-fallback">{fallbackLetter()}</span>}
+    <article class="pm-compact-card">
+      <div class="pm-compact-card__header">
+        <div class="pm-compact-card__art">
+          <Show
+            when={asset().image_url}
+            fallback={<span class="pm-compact-card__art-fallback">{fallbackLetter()}</span>}
+          >
+            <img src={asset().image_url ?? ""} alt={`${asset().name} card icon`} loading="lazy" />
+          </Show>
+        </div>
+        <div class="pm-compact-card__title-wrap">
+          <div class="pm-compact-card__title-box">
+            <h3 class="pm-compact-card__title">{asset().name}</h3>
+            <p class="pm-compact-card__subtitle">{asset().symbol}</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="pm-compact-card__body">
+        <div class="pm-compact-card__rows">
+          <div class="pm-compact-card__row">
+            <div class="pm-compact-card__row-copy">
+              <p class="pm-compact-card__row-label">State</p>
+            </div>
+            <div class="pm-compact-card__row-actions">
+              <p class="pm-compact-card__metric">{asset().asset_state_label}</p>
+            </div>
+          </div>
+
+          <div class="pm-compact-card__row">
+            <div class="pm-compact-card__row-copy">
+              <p class="pm-compact-card__row-label">Subscription</p>
+            </div>
+            <div class="pm-compact-card__row-actions">
+              <p class="pm-compact-card__metric">${asset().price_per_token}</p>
+            </div>
+          </div>
+
+          <div class="pm-compact-card__row">
+            <div class="pm-compact-card__row-copy">
+              <p class="pm-compact-card__row-label">Redemption</p>
+            </div>
+            <div class="pm-compact-card__row-actions">
+              <p class="pm-compact-card__metric">${asset().redemption_price_per_token}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="pm-compact-card__footer pm-compact-card__footer--stack">
+        <div class="pm-compact-card__footer-badges">
+          <Show when={asset().featured}>
+            <span class="pm-compact-card__badge">Featured</span>
+          </Show>
+          <Show when={asset().self_service_purchase_enabled}>
+            <span class="pm-compact-card__badge">Self-service</span>
+          </Show>
+          <Show when={!asset().visible}>
+            <span class="pm-compact-card__badge">Hidden</span>
+          </Show>
+        </div>
+
+        <div class="pm-asset-preview-card__meta">
+          <p class="pm-compact-card__footer-text">{asset().holder_count} holders</p>
+          <Show when={props.onManagePricing}>
+            <button
+              class="pm-button pm-button--ghost"
+              type="button"
+              onClick={() => props.onManagePricing?.(asset())}
             >
-              <img
-                src={asset().image_url ?? ""}
-                alt={`${asset().name} icon`}
-                loading="lazy"
-              />
-            </Show>
-          </div>
-          <div class="pm-compact-card__title-wrap">
-            <div class="pm-compact-card__title-box">
-              <h3 class="pm-compact-card__title">{asset().name}</h3>
-              <p class="pm-compact-card__subtitle">{asset().symbol}</p>
-            </div>
-          </div>
+              Update pricing
+            </button>
+          </Show>
         </div>
+      </div>
+    </article>
+  );
+}
 
-        <div class="pm-compact-card__body">
-          <div class="pm-compact-card__rows">
-            <div class="pm-compact-card__row">
-              <div class="pm-compact-card__row-copy">
-                <p class="pm-compact-card__row-label">State</p>
-              </div>
-              <div class="pm-compact-card__row-actions">
-                <p class="pm-compact-card__metric">{asset().asset_state_label}</p>
-              </div>
-            </div>
-
-            <div class="pm-compact-card__row">
-              <div class="pm-compact-card__row-copy">
-                <p class="pm-compact-card__row-label">Price</p>
-              </div>
-              <div class="pm-compact-card__row-actions">
-                <p class="pm-compact-card__metric">${asset().price_per_token}</p>
-              </div>
-            </div>
+function AdminGate(props: {
+  connected: boolean;
+  walletLabel: string;
+  onConnect: () => void;
+  children: JSX.Element;
+}) {
+  return (
+    <Show
+      when={props.connected}
+      fallback={
+        <section class="pm-admin-gate">
+          <div>
+            <p class="pm-admin-gate__eyebrow">Admin authentication required</p>
+            <h3 class="pm-admin-gate__title">Connect an allowlisted wallet</h3>
+            <p class="pm-admin-gate__copy">
+              This workflow signs a wallet challenge before the backend accepts the request.
+            </p>
           </div>
-        </div>
 
-        <div class="pm-compact-card__footer">
-          <div class="pm-compact-card__footer-badges">
-            <Show when={asset().featured}>
-              <span class="pm-compact-card__badge">Featured</span>
-            </Show>
-            <Show when={asset().self_service_purchase_enabled}>
-              <span class="pm-compact-card__badge">Self-Service</span>
-            </Show>
+          <div class="pm-admin-gate__actions">
+            <button class="pm-button pm-button--primary" type="button" onClick={props.onConnect}>
+              Connect admin wallet
+            </button>
           </div>
-        </div>
-      </article>
-    </div>
+        </section>
+      }
+    >
+      <div class="pm-admin-gate__session">
+        <span class="pm-market-chip">Authenticated</span>
+        <span class="pm-market-chip">{props.walletLabel}</span>
+      </div>
+      {props.children}
+    </Show>
   );
 }
 
 export default function AdminAssetManager() {
+  const auth = useAdminAuth();
   const factoryTask = useAsyncTask(() => assetClient.fetchFactoryStatus());
+  const assetTypesTask = useAsyncTask(() => assetClient.listAssetTypes());
   const listTask = useAsyncTask((query?: ListAssetsQuery) => assetClient.listAssets(query));
   const registerTypeTask = useAsyncTask((token: string, payload: AdminRegisterAssetTypeRequest) =>
     assetClient.registerAssetType(token, payload),
@@ -106,34 +241,106 @@ export default function AdminAssetManager() {
     (token: string, assetAddress: string, payload: AdminSetAssetPricingRequest) =>
       assetClient.setPricing(token, assetAddress, payload),
   );
+  const [activeModal, setActiveModal] = createSignal<AssetModalView | null>(null);
   const [listError, setListError] = createSignal<string | null>(null);
   const [registerError, setRegisterError] = createSignal<string | null>(null);
   const [createError, setCreateError] = createSignal<string | null>(null);
   const [pricingError, setPricingError] = createSignal<string | null>(null);
+  const [pricingDraft, setPricingDraft] = createSignal<PricingDraft>({
+    ...EMPTY_PRICING_DRAFT,
+  });
+  const [lastListQuery, setLastListQuery] = createSignal<ListAssetsQuery>({
+    ...DEFAULT_LIST_QUERY,
+  });
 
-  const adminToken = () => readAdminToken();
+  const adminToken = () => auth.session()?.token ?? readAdminToken();
+  const isAdminConnected = () => Boolean(auth.profile() && adminToken());
+  const adminWalletLabel = () => formatWalletLabel(auth.profile()?.user.wallet?.wallet_address);
+  const assetTypes = () => assetTypesTask.data()?.asset_types ?? [];
+  const previewAssets = () => listTask.data()?.assets ?? [];
+
+  async function refreshFactoryStatus() {
+    try {
+      await factoryTask.run();
+    } catch {
+      // Keep the last successful snapshot visible.
+    }
+  }
+
+  async function refreshAssetTypes() {
+    try {
+      await assetTypesTask.run();
+    } catch {
+      // The create flow falls back to manual input when this request fails.
+    }
+  }
+
+  async function runAssetList(query: ListAssetsQuery = lastListQuery()) {
+    setListError(null);
+    setLastListQuery({
+      ...query,
+    });
+
+    try {
+      await listTask.run(query);
+    } catch (error) {
+      setListError(getErrorMessage(error));
+    }
+  }
+
+  function openModal(view: AssetModalView) {
+    if (view === "pricing") {
+      setPricingDraft({ ...EMPTY_PRICING_DRAFT });
+      setPricingError(null);
+      setPricingTask.reset();
+    }
+
+    if (view === "register-type") {
+      setRegisterError(null);
+      registerTypeTask.reset();
+    }
+
+    if (view === "create-asset") {
+      setCreateError(null);
+      createAssetTask.reset();
+    }
+
+    if (view === "catalog") {
+      void runAssetList(lastListQuery());
+    }
+
+    setActiveModal(view);
+  }
+
+  function openPricingModal(asset?: AssetResponse) {
+    setPricingDraft(buildPricingDraft(asset));
+    setPricingError(null);
+    setPricingTask.reset();
+    setActiveModal("pricing");
+  }
+
+  onMount(() => {
+    void refreshFactoryStatus();
+    void refreshAssetTypes();
+    void runAssetList(DEFAULT_LIST_QUERY);
+  });
 
   async function handleListSubmit(event: SubmitEvent) {
     event.preventDefault();
     const formData = new FormData(event.currentTarget as HTMLFormElement);
-    setListError(null);
 
-    try {
-      await listTask.run({
-        asset_type_id: readOptionalText(formData, "asset_type_id"),
-        q: readOptionalText(formData, "q"),
-        asset_state: readOptionalText(formData, "asset_state"),
-        featured: readOptionalBoolean(formData, "featured"),
-        self_service_purchase_enabled: readOptionalBoolean(
-          formData,
-          "self_service_purchase_enabled",
-        ),
-        limit: readOptionalInteger(formData, "limit", "Limit"),
-        offset: readOptionalInteger(formData, "offset", "Offset"),
-      });
-    } catch (error) {
-      setListError(getErrorMessage(error));
-    }
+    await runAssetList({
+      asset_type_id: readOptionalText(formData, "asset_type_id"),
+      q: readOptionalText(formData, "q"),
+      asset_state: readOptionalText(formData, "asset_state"),
+      featured: readOptionalBoolean(formData, "featured"),
+      self_service_purchase_enabled: readOptionalBoolean(
+        formData,
+        "self_service_purchase_enabled",
+      ),
+      limit: readOptionalInteger(formData, "limit", "Limit"),
+      offset: readOptionalInteger(formData, "offset", "Offset"),
+    });
   }
 
   async function handleRegisterTypeSubmit(event: SubmitEvent) {
@@ -142,10 +349,12 @@ export default function AdminAssetManager() {
 
     if (!token) {
       setRegisterError("Connect an admin wallet first.");
+      auth.openAuthDialog();
       return;
     }
 
-    const formData = new FormData(event.currentTarget as HTMLFormElement);
+    const form = event.currentTarget as HTMLFormElement;
+    const formData = new FormData(form);
     setRegisterError(null);
 
     try {
@@ -158,7 +367,8 @@ export default function AdminAssetManager() {
           "Implementation address",
         ),
       });
-      (event.currentTarget as HTMLFormElement).reset();
+      form.reset();
+      void refreshAssetTypes();
     } catch (error) {
       setRegisterError(getErrorMessage(error));
     }
@@ -170,6 +380,7 @@ export default function AdminAssetManager() {
 
     if (!token) {
       setCreateError("Connect an admin wallet first.");
+      auth.openAuthDialog();
       return;
     }
 
@@ -189,11 +400,7 @@ export default function AdminAssetManager() {
           "subscription_price",
           "Subscription price",
         ),
-        redemption_price: readRequiredText(
-          formData,
-          "redemption_price",
-          "Redemption price",
-        ),
+        redemption_price: readRequiredText(formData, "redemption_price", "Redemption price"),
         self_service_purchase_enabled: Boolean(formData.get("self_service_purchase_enabled")),
         metadata_hash: readOptionalText(formData, "metadata_hash") ?? null,
         slug: readOptionalText(formData, "slug") ?? null,
@@ -204,6 +411,8 @@ export default function AdminAssetManager() {
         searchable: Boolean(formData.get("searchable")),
       });
       form.reset();
+      void refreshFactoryStatus();
+      void runAssetList(lastListQuery());
     } catch (error) {
       setCreateError(getErrorMessage(error));
     }
@@ -215,11 +424,11 @@ export default function AdminAssetManager() {
 
     if (!token) {
       setPricingError("Connect an admin wallet first.");
+      auth.openAuthDialog();
       return;
     }
 
-    const form = event.currentTarget as HTMLFormElement;
-    const formData = new FormData(form);
+    const formData = new FormData(event.currentTarget as HTMLFormElement);
     setPricingError(null);
 
     try {
@@ -230,375 +439,831 @@ export default function AdminAssetManager() {
           "subscription_price",
           "Subscription price",
         ),
-        redemption_price: readRequiredText(
-          formData,
-          "redemption_price",
-          "Redemption price",
-        ),
+        redemption_price: readRequiredText(formData, "redemption_price", "Redemption price"),
       });
+      void runAssetList(lastListQuery());
     } catch (error) {
       setPricingError(getErrorMessage(error));
     }
   }
 
   return (
-    <div class="pm-tool-stack">
-      <div class="pm-tool-section">
-        <div class="pm-tool-section__header">
-          <div>
-            <p class="pm-admin-section-header__eyebrow">Public endpoints</p>
-            <h2 class="pm-tool-section__title">Asset catalog</h2>
-          </div>
-          <p class="pm-admin-section-note">
-            Browse all registered assets. Public asset endpoints for factory status and catalog reads.
-          </p>
-        </div>
-
-        <div class="pm-tool-section__grid">
-          <section class="pm-market-card">
-            <div class="pm-market-card__header">
-              <div>
-                <p class="pm-market-card__eyebrow">GET /assets/factory</p>
-                <h3 class="pm-market-card__title">Factory status</h3>
-              </div>
-            </div>
-            <p class="pm-market-card__copy">
-              Fetch on-chain factory wiring, registry addresses, and pause state.
+    <>
+      <div class="pm-asset-admin">
+        <section class="pm-asset-admin__hero">
+          <div class="pm-asset-admin__hero-copy">
+            <p class="pm-admin-section-header__eyebrow">Asset operations</p>
+            <h1 class="pm-asset-admin__title">Manage the full asset catalog without losing the flow.</h1>
+            <p class="pm-asset-admin__copy">
+              Public reads stay visible in the workspace, while write operations now open in dedicated
+              modals with admin wallet checks before any registry or pricing call is sent.
             </p>
-            <div class="pm-market-actions">
-              <button
-                class="pm-button pm-button--primary"
-                type="button"
-                disabled={factoryTask.pending()}
-                onClick={() => void factoryTask.run()}
-              >
-                {factoryTask.pending() ? "Loading..." : "Fetch factory"}
+
+            <div class="pm-asset-admin__chips">
+              <span class="pm-market-chip">
+                {factoryTask.data()?.total_assets_created ?? "0"} total assets
+              </span>
+              <span class="pm-market-chip">{assetTypes().length} registered types</span>
+              <span class="pm-market-chip">
+                {factoryTask.data()?.paused ? "Factory paused" : "Factory live"}
+              </span>
+            </div>
+
+            <div class="pm-asset-admin__actions">
+              <button class="pm-button pm-button--primary" type="button" onClick={() => openModal("create-asset")}>
+                Create asset
+              </button>
+              <button class="pm-button pm-button--ghost" type="button" onClick={() => openModal("catalog")}>
+                Browse catalog
               </button>
             </div>
-            <Show when={factoryTask.error()}>
-              <p class="pm-market-feedback pm-market-feedback--error">
-                {getErrorMessage(factoryTask.error())}
+          </div>
+
+          <aside class="pm-asset-admin__session">
+            <p class="pm-asset-admin__session-eyebrow">Admin auth</p>
+            <Show
+              when={isAdminConnected()}
+              fallback={
+                <>
+                  <h2 class="pm-asset-admin__session-title">Authentication required for write calls</h2>
+                  <p class="pm-asset-admin__session-copy">
+                    Asset reads are public. Registry setup, creation, and pricing updates require an
+                    allowlisted admin wallet session.
+                  </p>
+                  <button class="pm-button pm-button--primary" type="button" onClick={auth.openAuthDialog}>
+                    Connect admin wallet
+                  </button>
+                </>
+              }
+            >
+              <h2 class="pm-asset-admin__session-title">Authenticated and ready</h2>
+              <p class="pm-asset-admin__session-copy">
+                Wallet session is active for admin-only endpoint flows and modal confirmations.
               </p>
+              <div class="pm-asset-admin__session-chips">
+                <span class="pm-market-chip">{adminWalletLabel()}</span>
+                <span class="pm-market-chip">Monad #{auth.profile()?.monad_chain_id ?? "-"}</span>
+              </div>
             </Show>
-            <Show when={factoryTask.data()}>
-              <div class="pm-market-result">
-                <div class="pm-market-result__grid">
-                  <div>
-                    <span class="pm-market-result__label">Factory</span>
-                    <span class="pm-market-result__value">{factoryTask.data()!.factory_address}</span>
-                  </div>
-                  <div>
-                    <span class="pm-market-result__label">Paused</span>
-                    <span class="pm-market-result__value">{factoryTask.data()!.paused ? "Yes" : "No"}</span>
-                  </div>
-                  <div>
-                    <span class="pm-market-result__label">Total Assets</span>
-                    <span class="pm-market-result__value">{factoryTask.data()!.total_assets_created}</span>
-                  </div>
+          </aside>
+        </section>
+
+        <section class="pm-asset-admin__section">
+          <div class="pm-tool-section__header">
+            <div>
+              <p class="pm-admin-section-header__eyebrow">Public endpoints</p>
+              <h2 class="pm-tool-section__title">Read the live catalog before you write</h2>
+            </div>
+            <p class="pm-admin-section-note">
+              These calls stay unauthenticated. Use them to validate factory wiring, search the catalog,
+              and pick the correct asset before pricing changes.
+            </p>
+          </div>
+
+          <div class="pm-asset-action-grid">
+            <ActionCard
+              actionLabel="Public"
+              endpoint="GET /assets/factory"
+              title="Factory status"
+              copy="Inspect registry wiring, access control addresses, treasury wiring, and the global pause flag."
+              detail="Quick sanity check before any admin write"
+              onOpen={() => openModal("factory")}
+            />
+            <ActionCard
+              actionLabel="Public"
+              endpoint="GET /assets"
+              title="Catalog explorer"
+              copy="Search by query, type, state, featured status, and self-service availability in one place."
+              detail="Use results to launch pricing updates directly"
+              onOpen={() => openModal("catalog")}
+            />
+          </div>
+        </section>
+
+        <section class="pm-asset-admin__section">
+          <div class="pm-tool-section__header">
+            <div>
+              <p class="pm-admin-section-header__eyebrow">Admin endpoints</p>
+              <h2 class="pm-tool-section__title">Run guarded write workflows</h2>
+            </div>
+            <p class="pm-admin-section-note">
+              Each write operation opens in a dedicated modal and prompts for admin wallet auth when the
+              session is missing.
+            </p>
+          </div>
+
+          <div class="pm-asset-action-grid pm-asset-action-grid--admin">
+            <ActionCard
+              actionLabel="Admin"
+              endpoint="POST /admin/assets/types"
+              title="Register asset type"
+              copy="Add a new asset implementation mapping before assets can be created against it."
+              detail="Validates against the current registered type list"
+              onOpen={() => openModal("register-type")}
+              tone="admin"
+            />
+            <ActionCard
+              actionLabel="Admin"
+              endpoint="POST /admin/assets"
+              title="Create asset"
+              copy="Create a new asset with catalog metadata, supply controls, visibility, and initial prices."
+              detail="Uses backend asset types where available"
+              onOpen={() => openModal("create-asset")}
+              tone="admin"
+            />
+            <ActionCard
+              actionLabel="Admin"
+              endpoint="PUT /admin/assets/{asset_address}/pricing"
+              title="Update pricing"
+              copy="Change subscription and redemption pricing without digging through inline forms."
+              detail="Can be launched blank or prefilled from catalog results"
+              onOpen={() => openPricingModal()}
+              tone="admin"
+            />
+          </div>
+        </section>
+
+        <section class="pm-asset-admin__preview-grid">
+          <article class="pm-asset-snapshot-card">
+            <div class="pm-asset-snapshot-card__header">
+              <div>
+                <p class="pm-market-card__eyebrow">Factory snapshot</p>
+                <h3 class="pm-market-card__title">Current on-chain wiring</h3>
+              </div>
+              <button
+                class="pm-button pm-button--ghost"
+                type="button"
+                disabled={factoryTask.pending()}
+                onClick={() => void refreshFactoryStatus()}
+              >
+                {factoryTask.pending() ? "Refreshing..." : "Refresh"}
+              </button>
+            </div>
+
+            <Show
+              when={factoryTask.data()}
+              fallback={
+                <p class="pm-market-feedback">
+                  {factoryTask.error()
+                    ? getErrorMessage(factoryTask.error())
+                    : "Factory status will appear here after the initial fetch completes."}
+                </p>
+              }
+            >
+              <div class="pm-market-result__grid">
+                <div>
+                  <span class="pm-market-result__label">Factory</span>
+                  <span class="pm-market-result__value">
+                    {factoryTask.data()!.factory_address}
+                  </span>
+                </div>
+                <div>
+                  <span class="pm-market-result__label">Access control</span>
+                  <span class="pm-market-result__value">
+                    {factoryTask.data()!.access_control_address}
+                  </span>
+                </div>
+                <div>
+                  <span class="pm-market-result__label">Treasury</span>
+                  <span class="pm-market-result__value">
+                    {factoryTask.data()!.treasury_address}
+                  </span>
+                </div>
+                <div>
+                  <span class="pm-market-result__label">Compliance registry</span>
+                  <span class="pm-market-result__value">
+                    {factoryTask.data()!.compliance_registry_address}
+                  </span>
                 </div>
               </div>
             </Show>
-          </section>
+          </article>
 
-          <section class="pm-market-card pm-market-card--wide">
-            <div class="pm-market-card__header">
+          <article class="pm-asset-snapshot-card">
+            <div class="pm-asset-snapshot-card__header">
               <div>
-                <p class="pm-market-card__eyebrow">GET /assets</p>
-                <h3 class="pm-market-card__title">List assets</h3>
+                <p class="pm-market-card__eyebrow">Catalog snapshot</p>
+                <h3 class="pm-market-card__title">Recent assets</h3>
               </div>
+              <button class="pm-button pm-button--ghost" type="button" onClick={() => openModal("catalog")}>
+                Open explorer
+              </button>
             </div>
-            <form class="pm-market-form" onSubmit={handleListSubmit}>
-              <div class="pm-market-fields">
-                <label class="pm-field">
-                  <span class="pm-field__label">Search</span>
-                  <input class="pm-field__input" name="q" type="text" placeholder="treasury" />
-                </label>
-                <label class="pm-field">
-                  <span class="pm-field__label">Asset type ID</span>
-                  <input class="pm-field__input" name="asset_type_id" type="text" />
-                </label>
-                <label class="pm-field">
-                  <span class="pm-field__label">Asset state</span>
-                  <input class="pm-field__input" name="asset_state" type="text" />
-                </label>
-                <label class="pm-field">
-                  <span class="pm-field__label">Featured</span>
-                  <select class="pm-field__input" name="featured">
-                    <option value="">Any</option>
-                    <option value="true">True</option>
-                    <option value="false">False</option>
-                  </select>
-                </label>
-                <label class="pm-field">
-                  <span class="pm-field__label">Self service</span>
-                  <select class="pm-field__input" name="self_service_purchase_enabled">
-                    <option value="">Any</option>
-                    <option value="true">True</option>
-                    <option value="false">False</option>
-                  </select>
-                </label>
-                <label class="pm-field">
-                  <span class="pm-field__label">Limit</span>
-                  <input class="pm-field__input" name="limit" type="number" min="1" value="50" />
-                </label>
-              </div>
-              <div class="pm-market-actions">
-                <button class="pm-button pm-button--primary" type="submit" disabled={listTask.pending()}>
-                  {listTask.pending() ? "Loading..." : "List assets"}
-                </button>
-              </div>
-            </form>
+
             <Show when={listError()}>
               <p class="pm-market-feedback pm-market-feedback--error">{listError()}</p>
             </Show>
-            <Show when={listTask.data()}>
-              <div class="pm-all-markets__grid">
-                <For each={listTask.data()!.assets}>
-                  {asset => <AssetCard asset={asset} />}
+
+            <Show
+              when={previewAssets().length > 0}
+              fallback={
+                <p class="pm-market-feedback">
+                  {listTask.pending() ? "Loading recent assets..." : "No assets found yet."}
+                </p>
+              }
+            >
+              <div class="pm-asset-preview-grid">
+                <For each={previewAssets().slice(0, 4)}>
+                  {asset => (
+                    <AssetCard
+                      asset={asset}
+                      onManagePricing={isAdminConnected() ? openPricingModal : undefined}
+                    />
+                  )}
                 </For>
               </div>
             </Show>
-          </section>
-        </div>
+          </article>
+        </section>
       </div>
 
-      <div class="pm-tool-section">
-        <div class="pm-tool-section__header">
-          <div>
-            <p class="pm-admin-section-header__eyebrow">Admin endpoints</p>
-            <h2 class="pm-tool-section__title">Asset writes</h2>
+      <AdminModal
+        open={activeModal() === "factory"}
+        onClose={() => setActiveModal(null)}
+        eyebrow="Public endpoint"
+        title="Factory status"
+        subtitle="Fetch the current factory, registry, treasury, and pause-state snapshot."
+      >
+        <div class="pm-asset-modal-stack">
+          <div class="pm-market-actions pm-market-actions--split">
+            <div class="pm-asset-modal__chips">
+              <Show when={factoryTask.data()}>
+                <span class="pm-market-chip">
+                  {factoryTask.data()!.paused ? "Paused" : "Unpaused"}
+                </span>
+              </Show>
+              <Show when={factoryTask.data()}>
+                <span class="pm-market-chip">
+                  {factoryTask.data()!.total_assets_created} assets created
+                </span>
+              </Show>
+            </div>
+            <button
+              class="pm-button pm-button--primary"
+              type="button"
+              disabled={factoryTask.pending()}
+              onClick={() => void refreshFactoryStatus()}
+            >
+              {factoryTask.pending() ? "Fetching..." : "Fetch factory"}
+            </button>
           </div>
-          <p class="pm-admin-section-note">
-            Wallet-authenticated endpoints for registry setup, asset creation, and price control.
-          </p>
-        </div>
 
-        <div class="pm-tool-section__grid">
-          <section class="pm-market-card">
-            <div class="pm-market-card__header">
-              <div>
-                <p class="pm-market-card__eyebrow">POST /admin/assets/types</p>
-                <h3 class="pm-market-card__title">Register asset type</h3>
+          <Show when={factoryTask.error()}>
+            <p class="pm-market-feedback pm-market-feedback--error">
+              {getErrorMessage(factoryTask.error())}
+            </p>
+          </Show>
+
+          <Show when={factoryTask.data()}>
+            <div class="pm-market-result">
+              <div class="pm-market-result__grid">
+                <div>
+                  <span class="pm-market-result__label">Factory</span>
+                  <span class="pm-market-result__value">{factoryTask.data()!.factory_address}</span>
+                </div>
+                <div>
+                  <span class="pm-market-result__label">Access control</span>
+                  <span class="pm-market-result__value">
+                    {factoryTask.data()!.access_control_address}
+                  </span>
+                </div>
+                <div>
+                  <span class="pm-market-result__label">Treasury</span>
+                  <span class="pm-market-result__value">{factoryTask.data()!.treasury_address}</span>
+                </div>
+                <div>
+                  <span class="pm-market-result__label">Compliance registry</span>
+                  <span class="pm-market-result__value">
+                    {factoryTask.data()!.compliance_registry_address}
+                  </span>
+                </div>
               </div>
             </div>
+          </Show>
+        </div>
+      </AdminModal>
+
+      <AdminModal
+        open={activeModal() === "catalog"}
+        onClose={() => setActiveModal(null)}
+        eyebrow="Public endpoint"
+        title="Catalog explorer"
+        subtitle="Search and inspect assets, then jump straight into pricing updates from the results."
+        size="wide"
+      >
+        <div class="pm-asset-modal-stack">
+          <form class="pm-market-form" onSubmit={handleListSubmit}>
+            <div class="pm-market-fields">
+              <label class="pm-field">
+                <span class="pm-field__label">Search</span>
+                <input
+                  class="pm-field__input"
+                  name="q"
+                  type="text"
+                  placeholder="treasury"
+                  value={lastListQuery().q ?? ""}
+                />
+              </label>
+
+              <label class="pm-field">
+                <span class="pm-field__label">Asset type ID</span>
+                <input
+                  class="pm-field__input"
+                  name="asset_type_id"
+                  type="text"
+                  placeholder="treasury_fund"
+                  value={lastListQuery().asset_type_id ?? ""}
+                />
+              </label>
+
+              <label class="pm-field">
+                <span class="pm-field__label">Asset state</span>
+                <input
+                  class="pm-field__input"
+                  name="asset_state"
+                  type="text"
+                  placeholder="active"
+                  value={lastListQuery().asset_state ?? ""}
+                />
+              </label>
+
+              <label class="pm-field">
+                <span class="pm-field__label">Featured</span>
+                <select class="pm-field__input" name="featured" value={String(lastListQuery().featured ?? "")}>
+                  <option value="">Any</option>
+                  <option value="true">True</option>
+                  <option value="false">False</option>
+                </select>
+              </label>
+
+              <label class="pm-field">
+                <span class="pm-field__label">Self service</span>
+                <select
+                  class="pm-field__input"
+                  name="self_service_purchase_enabled"
+                  value={String(lastListQuery().self_service_purchase_enabled ?? "")}
+                >
+                  <option value="">Any</option>
+                  <option value="true">True</option>
+                  <option value="false">False</option>
+                </select>
+              </label>
+
+              <label class="pm-field">
+                <span class="pm-field__label">Limit</span>
+                <input
+                  class="pm-field__input"
+                  name="limit"
+                  type="number"
+                  min="1"
+                  value={String(lastListQuery().limit ?? DEFAULT_LIST_QUERY.limit ?? 12)}
+                />
+              </label>
+
+              <label class="pm-field">
+                <span class="pm-field__label">Offset</span>
+                <input
+                  class="pm-field__input"
+                  name="offset"
+                  type="number"
+                  min="0"
+                  value={String(lastListQuery().offset ?? 0)}
+                />
+              </label>
+            </div>
+
+            <div class="pm-market-actions pm-market-actions--group">
+              <button class="pm-button pm-button--primary" type="submit" disabled={listTask.pending()}>
+                {listTask.pending() ? "Searching..." : "List assets"}
+              </button>
+              <button
+                class="pm-button pm-button--ghost"
+                type="button"
+                onClick={() => void runAssetList(DEFAULT_LIST_QUERY)}
+              >
+                Reset filters
+              </button>
+            </div>
+          </form>
+
+          <Show when={listError()}>
+            <p class="pm-market-feedback pm-market-feedback--error">{listError()}</p>
+          </Show>
+
+          <div class="pm-asset-modal__summary">
+            <span class="pm-market-chip">{listTask.data()?.assets.length ?? 0} results</span>
+            <span class="pm-market-chip">
+              limit {listTask.data()?.limit ?? lastListQuery().limit ?? DEFAULT_LIST_QUERY.limit}
+            </span>
+            <span class="pm-market-chip">
+              offset {listTask.data()?.offset ?? lastListQuery().offset ?? 0}
+            </span>
+          </div>
+
+          <Show
+            when={listTask.data()?.assets.length}
+            fallback={
+              <p class="pm-market-feedback">
+                {listTask.pending() ? "Loading assets..." : "No assets matched the current filters."}
+              </p>
+            }
+          >
+            <div class="pm-asset-modal-grid">
+              <For each={listTask.data()!.assets}>
+                {asset => (
+                  <AssetCard
+                    asset={asset}
+                    onManagePricing={isAdminConnected() ? openPricingModal : undefined}
+                  />
+                )}
+              </For>
+            </div>
+          </Show>
+        </div>
+      </AdminModal>
+
+      <AdminModal
+        open={activeModal() === "register-type"}
+        onClose={() => setActiveModal(null)}
+        eyebrow="Admin endpoint"
+        title="Register asset type"
+        subtitle="Map a human-readable asset type ID to the deployed implementation address."
+      >
+        <div class="pm-asset-modal-stack">
+          <AdminGate
+            connected={isAdminConnected()}
+            walletLabel={adminWalletLabel()}
+            onConnect={auth.openAuthDialog}
+          >
             <form class="pm-market-form" onSubmit={handleRegisterTypeSubmit}>
               <div class="pm-market-fields">
                 <label class="pm-field">
                   <span class="pm-field__label">Asset type ID</span>
                   <input class="pm-field__input" name="asset_type_id" type="text" required />
                 </label>
+
                 <label class="pm-field">
                   <span class="pm-field__label">Asset type name</span>
                   <input class="pm-field__input" name="asset_type_name" type="text" required />
                 </label>
+
                 <label class="pm-field pm-field--full">
                   <span class="pm-field__label">Implementation address</span>
                   <input class="pm-field__input" name="implementation_address" type="text" required />
                 </label>
               </div>
+
               <div class="pm-market-actions">
                 <button
                   class="pm-button pm-button--primary"
                   type="submit"
-                  disabled={registerTypeTask.pending() || !adminToken()}
+                  disabled={registerTypeTask.pending()}
                 >
-                  {registerTypeTask.pending() ? "Submitting..." : "Register type"}
+                  {registerTypeTask.pending() ? "Registering..." : "Register type"}
                 </button>
               </div>
             </form>
-            <Show when={registerError()}>
-              <p class="pm-market-feedback pm-market-feedback--error">{registerError()}</p>
-            </Show>
-            <Show when={registerTypeTask.data()}>
-              <div class="pm-market-result">
-                <div class="pm-market-result__header">
-                  <div>
-                    <p class="pm-market-result__eyebrow">Registered</p>
-                    <h3 class="pm-market-result__title">{registerTypeTask.data()!.asset_type.asset_type_name}</h3>
-                  </div>
-                </div>
-                <div class="pm-market-result__grid">
-                  <div>
-                    <span class="pm-market-result__label">Type ID</span>
-                    <span class="pm-market-result__value">{registerTypeTask.data()!.asset_type.asset_type_id}</span>
-                  </div>
-                  <div>
-                    <span class="pm-market-result__label">TX Hash</span>
-                    <span class="pm-market-result__value">{registerTypeTask.data()!.tx_hash}</span>
-                  </div>
+          </AdminGate>
+
+          <Show when={registerError()}>
+            <p class="pm-market-feedback pm-market-feedback--error">{registerError()}</p>
+          </Show>
+
+          <Show when={registerTypeTask.data()}>
+            <div class="pm-market-result">
+              <div class="pm-market-result__header">
+                <div>
+                  <p class="pm-market-result__eyebrow">Registered</p>
+                  <h3 class="pm-market-result__title">
+                    {registerTypeTask.data()!.asset_type.asset_type_name}
+                  </h3>
                 </div>
               </div>
-            </Show>
-          </section>
 
-          <section class="pm-market-card pm-market-card--wide">
-            <div class="pm-market-card__header">
-              <div>
-                <p class="pm-market-card__eyebrow">POST /admin/assets</p>
-                <h3 class="pm-market-card__title">Create asset</h3>
+              <div class="pm-market-result__grid">
+                <div>
+                  <span class="pm-market-result__label">Type ID</span>
+                  <span class="pm-market-result__value">
+                    {registerTypeTask.data()!.asset_type.asset_type_id}
+                  </span>
+                </div>
+                <div>
+                  <span class="pm-market-result__label">Implementation</span>
+                  <span class="pm-market-result__value">
+                    {registerTypeTask.data()!.asset_type.implementation_address}
+                  </span>
+                </div>
+                <div class="pm-market-result__detail--full">
+                  <span class="pm-market-result__label">Transaction</span>
+                  <span class="pm-market-result__value">{registerTypeTask.data()!.tx_hash}</span>
+                </div>
               </div>
             </div>
+          </Show>
+
+          <Show when={assetTypes().length > 0}>
+            <div class="pm-asset-type-list">
+              <div class="pm-asset-type-list__header">
+                <p class="pm-market-card__eyebrow">Registered types</p>
+                <span class="pm-market-chip">{assetTypes().length} loaded</span>
+              </div>
+
+              <div class="pm-asset-type-list__grid">
+                <For each={assetTypes()}>
+                  {assetType => (
+                    <div class="pm-asset-type-list__item">
+                      <p class="pm-asset-type-list__title">{assetType.asset_type_name}</p>
+                      <p class="pm-asset-type-list__meta">{assetType.asset_type_id}</p>
+                    </div>
+                  )}
+                </For>
+              </div>
+            </div>
+          </Show>
+        </div>
+      </AdminModal>
+
+      <AdminModal
+        open={activeModal() === "create-asset"}
+        onClose={() => setActiveModal(null)}
+        eyebrow="Admin endpoint"
+        title="Create asset"
+        subtitle="Create the asset, wire catalog metadata, and set initial subscription and redemption pricing."
+        size="wide"
+      >
+        <div class="pm-asset-modal-stack">
+          <AdminGate
+            connected={isAdminConnected()}
+            walletLabel={adminWalletLabel()}
+            onConnect={auth.openAuthDialog}
+          >
             <form class="pm-market-form" onSubmit={handleCreateAssetSubmit}>
               <div class="pm-market-fields">
                 <label class="pm-field">
                   <span class="pm-field__label">Proposal ID</span>
                   <input class="pm-field__input" name="proposal_id" type="text" required />
                 </label>
+
                 <label class="pm-field">
                   <span class="pm-field__label">Asset type ID</span>
-                  <input class="pm-field__input" name="asset_type_id" type="text" required />
+                  <Show
+                    when={assetTypes().length > 0}
+                    fallback={
+                      <input
+                        class="pm-field__input"
+                        name="asset_type_id"
+                        type="text"
+                        placeholder="treasury_fund"
+                        required
+                      />
+                    }
+                  >
+                    <select class="pm-field__input" name="asset_type_id" required>
+                      <option value="">Select a registered type</option>
+                      <For each={assetTypes()}>
+                        {assetType => (
+                          <option value={assetType.asset_type_id}>
+                            {assetType.asset_type_name} ({assetType.asset_type_id})
+                          </option>
+                        )}
+                      </For>
+                    </select>
+                  </Show>
                 </label>
+
                 <label class="pm-field">
                   <span class="pm-field__label">Name</span>
                   <input class="pm-field__input" name="name" type="text" required />
                 </label>
+
                 <label class="pm-field">
                   <span class="pm-field__label">Symbol</span>
                   <input class="pm-field__input" name="symbol" type="text" required />
                 </label>
+
                 <label class="pm-field">
                   <span class="pm-field__label">Max supply</span>
                   <input class="pm-field__input" name="max_supply" type="text" required />
                 </label>
+
                 <label class="pm-field">
                   <span class="pm-field__label">Slug</span>
-                  <input class="pm-field__input" name="slug" type="text" />
+                  <input class="pm-field__input" name="slug" type="text" placeholder="monad-income-fund" />
                 </label>
+
                 <label class="pm-field">
                   <span class="pm-field__label">Subscription price</span>
                   <input class="pm-field__input" name="subscription_price" type="text" required />
                 </label>
+
                 <label class="pm-field">
                   <span class="pm-field__label">Redemption price</span>
                   <input class="pm-field__input" name="redemption_price" type="text" required />
                 </label>
+
                 <label class="pm-field">
                   <span class="pm-field__label">Metadata hash</span>
                   <input class="pm-field__input" name="metadata_hash" type="text" />
                 </label>
+
                 <label class="pm-field">
                   <span class="pm-field__label">Image URL</span>
                   <input class="pm-field__input" name="image_url" type="url" />
                 </label>
+
                 <label class="pm-field pm-field--full">
                   <span class="pm-field__label">Summary</span>
-                  <textarea class="pm-field__textarea" name="summary" rows="3" />
+                  <textarea class="pm-field__textarea" name="summary" rows="4" />
                 </label>
-                <label class="pm-checkbox">
-                  <input name="self_service_purchase_enabled" type="checkbox" />
-                  <span>Self-service purchase enabled</span>
-                </label>
-                <label class="pm-checkbox">
-                  <input name="featured" type="checkbox" />
-                  <span>Featured</span>
-                </label>
-                <label class="pm-checkbox">
-                  <input name="visible" type="checkbox" checked />
-                  <span>Visible</span>
-                </label>
-                <label class="pm-checkbox">
-                  <input name="searchable" type="checkbox" checked />
-                  <span>Searchable</span>
-                </label>
+
+                <div class="pm-asset-flags">
+                  <label class="pm-checkbox">
+                    <input name="self_service_purchase_enabled" type="checkbox" />
+                    <span>Self-service purchase enabled</span>
+                  </label>
+                  <label class="pm-checkbox">
+                    <input name="featured" type="checkbox" />
+                    <span>Featured</span>
+                  </label>
+                  <label class="pm-checkbox">
+                    <input name="visible" type="checkbox" checked />
+                    <span>Visible</span>
+                  </label>
+                  <label class="pm-checkbox">
+                    <input name="searchable" type="checkbox" checked />
+                    <span>Searchable</span>
+                  </label>
+                </div>
               </div>
+
               <div class="pm-market-actions">
                 <button
                   class="pm-button pm-button--primary"
                   type="submit"
-                  disabled={createAssetTask.pending() || !adminToken()}
+                  disabled={createAssetTask.pending()}
                 >
                   {createAssetTask.pending() ? "Creating..." : "Create asset"}
                 </button>
               </div>
             </form>
-            <Show when={createError()}>
-              <p class="pm-market-feedback pm-market-feedback--error">{createError()}</p>
-            </Show>
-            <Show when={createAssetTask.data()}>
-              <div class="pm-market-result">
-                <div class="pm-market-result__header">
-                  <div>
-                    <p class="pm-market-result__eyebrow">Created</p>
-                    <h3 class="pm-market-result__title">{createAssetTask.data()!.asset.name}</h3>
-                  </div>
-                  <span class="pm-market-result__badge">{createAssetTask.data()!.asset.asset_state_label}</span>
-                </div>
-                <div class="pm-market-result__grid">
-                  <div>
-                    <span class="pm-market-result__label">Asset Address</span>
-                    <span class="pm-market-result__value">{createAssetTask.data()!.asset.asset_address}</span>
-                  </div>
-                  <div>
-                    <span class="pm-market-result__label">Symbol</span>
-                    <span class="pm-market-result__value">{createAssetTask.data()!.asset.symbol}</span>
-                  </div>
-                  <div>
-                    <span class="pm-market-result__label">TX Hash</span>
-                    <span class="pm-market-result__value">{createAssetTask.data()!.tx_hash}</span>
-                  </div>
-                  <div class="pm-market-result__detail--full">
-                    <span class="pm-market-result__label">Created</span>
-                    <span class="pm-market-result__value">{formatTimestamp(createAssetTask.data()!.asset.updated_at)}</span>
-                  </div>
-                </div>
-              </div>
-            </Show>
-          </section>
+          </AdminGate>
 
-          <section class="pm-market-card">
-            <div class="pm-market-card__header">
-              <div>
-                <p class="pm-market-card__eyebrow">PUT /admin/assets/{'{asset_address}'}/pricing</p>
-                <h3 class="pm-market-card__title">Update pricing</h3>
+          <Show when={createError()}>
+            <p class="pm-market-feedback pm-market-feedback--error">{createError()}</p>
+          </Show>
+
+          <Show when={createAssetTask.data()}>
+            <div class="pm-market-result">
+              <div class="pm-market-result__header">
+                <div>
+                  <p class="pm-market-result__eyebrow">Created</p>
+                  <h3 class="pm-market-result__title">{createAssetTask.data()!.asset.name}</h3>
+                </div>
+                <span class="pm-market-result__badge">
+                  {createAssetTask.data()!.asset.asset_state_label}
+                </span>
+              </div>
+
+              <div class="pm-market-result__grid">
+                <div>
+                  <span class="pm-market-result__label">Asset address</span>
+                  <span class="pm-market-result__value">
+                    {createAssetTask.data()!.asset.asset_address}
+                  </span>
+                </div>
+                <div>
+                  <span class="pm-market-result__label">Symbol</span>
+                  <span class="pm-market-result__value">{createAssetTask.data()!.asset.symbol}</span>
+                </div>
+                <div>
+                  <span class="pm-market-result__label">Subscription price</span>
+                  <span class="pm-market-result__value">
+                    ${createAssetTask.data()!.asset.price_per_token}
+                  </span>
+                </div>
+                <div>
+                  <span class="pm-market-result__label">Redemption price</span>
+                  <span class="pm-market-result__value">
+                    ${createAssetTask.data()!.asset.redemption_price_per_token}
+                  </span>
+                </div>
+                <div>
+                  <span class="pm-market-result__label">Transaction</span>
+                  <span class="pm-market-result__value">{createAssetTask.data()!.tx_hash}</span>
+                </div>
+                <div>
+                  <span class="pm-market-result__label">Last updated</span>
+                  <span class="pm-market-result__value">
+                    {formatTimestamp(createAssetTask.data()!.asset.updated_at)}
+                  </span>
+                </div>
               </div>
             </div>
+          </Show>
+        </div>
+      </AdminModal>
+
+      <AdminModal
+        open={activeModal() === "pricing"}
+        onClose={() => setActiveModal(null)}
+        eyebrow="Admin endpoint"
+        title="Update pricing"
+        subtitle="Set new subscription and redemption pricing for an existing asset."
+      >
+        <div class="pm-asset-modal-stack">
+          <AdminGate
+            connected={isAdminConnected()}
+            walletLabel={adminWalletLabel()}
+            onConnect={auth.openAuthDialog}
+          >
             <form class="pm-market-form" onSubmit={handlePricingSubmit}>
               <div class="pm-market-fields">
                 <label class="pm-field pm-field--full">
                   <span class="pm-field__label">Asset address</span>
-                  <input class="pm-field__input" name="asset_address" type="text" required />
+                  <input
+                    class="pm-field__input"
+                    name="asset_address"
+                    type="text"
+                    value={pricingDraft().asset_address}
+                    required
+                  />
                 </label>
+
                 <label class="pm-field">
                   <span class="pm-field__label">Subscription price</span>
-                  <input class="pm-field__input" name="subscription_price" type="text" required />
+                  <input
+                    class="pm-field__input"
+                    name="subscription_price"
+                    type="text"
+                    value={pricingDraft().subscription_price}
+                    required
+                  />
                 </label>
+
                 <label class="pm-field">
                   <span class="pm-field__label">Redemption price</span>
-                  <input class="pm-field__input" name="redemption_price" type="text" required />
+                  <input
+                    class="pm-field__input"
+                    name="redemption_price"
+                    type="text"
+                    value={pricingDraft().redemption_price}
+                    required
+                  />
                 </label>
               </div>
+
               <div class="pm-market-actions">
                 <button
                   class="pm-button pm-button--primary"
                   type="submit"
-                  disabled={setPricingTask.pending() || !adminToken()}
+                  disabled={setPricingTask.pending()}
                 >
                   {setPricingTask.pending() ? "Saving..." : "Set pricing"}
                 </button>
               </div>
             </form>
-            <Show when={pricingError()}>
-              <p class="pm-market-feedback pm-market-feedback--error">{pricingError()}</p>
-            </Show>
-            <Show when={setPricingTask.data()}>
-              <div class="pm-market-result">
-                <div class="pm-market-result__header">
-                  <div>
-                    <p class="pm-market-result__eyebrow">Updated</p>
-                    <h3 class="pm-market-result__title">Pricing updated</h3>
-                  </div>
+          </AdminGate>
+
+          <Show when={pricingError()}>
+            <p class="pm-market-feedback pm-market-feedback--error">{pricingError()}</p>
+          </Show>
+
+          <Show when={setPricingTask.data()}>
+            <div class="pm-market-result">
+              <div class="pm-market-result__header">
+                <div>
+                  <p class="pm-market-result__eyebrow">Updated</p>
+                  <h3 class="pm-market-result__title">
+                    {setPricingTask.data()!.asset.name}
+                  </h3>
                 </div>
-                <div class="pm-market-result__grid">
-                  <div>
-                    <span class="pm-market-result__label">TX Hash</span>
-                    <span class="pm-market-result__value">{setPricingTask.data()!.tx_hash}</span>
-                  </div>
+                <span class="pm-market-result__badge">
+                  {setPricingTask.data()!.asset.asset_state_label}
+                </span>
+              </div>
+
+              <div class="pm-market-result__grid">
+                <div>
+                  <span class="pm-market-result__label">Subscription price</span>
+                  <span class="pm-market-result__value">
+                    ${setPricingTask.data()!.asset.price_per_token}
+                  </span>
+                </div>
+                <div>
+                  <span class="pm-market-result__label">Redemption price</span>
+                  <span class="pm-market-result__value">
+                    ${setPricingTask.data()!.asset.redemption_price_per_token}
+                  </span>
+                </div>
+                <div class="pm-market-result__detail--full">
+                  <span class="pm-market-result__label">Transaction</span>
+                  <span class="pm-market-result__value">{setPricingTask.data()!.tx_hash}</span>
                 </div>
               </div>
-            </Show>
-          </section>
+            </div>
+          </Show>
         </div>
-      </div>
-    </div>
+      </AdminModal>
+    </>
   );
 }
