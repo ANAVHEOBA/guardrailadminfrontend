@@ -1,3 +1,6 @@
+import type { ComplianceAssetRulesResponse } from "../compliance/types.ts";
+import type { OracleValuationResponse } from "../oracle/types.ts";
+import type { TreasuryAssetResponse } from "../treasury/types.ts";
 import type { IsoDateTimeString } from "../types.ts";
 
 export interface AssetClientOptions {
@@ -12,6 +15,14 @@ export interface ListAssetsQuery {
   featured?: boolean | null;
   limit?: number | null;
   offset?: number | null;
+}
+
+export interface AssetDetailQuery {
+  wallet_address?: string | null;
+}
+
+export interface AssetHistoryQuery {
+  range?: string | null;
 }
 
 export interface AdminRegisterAssetTypeRequest {
@@ -33,6 +44,9 @@ export interface AdminCreateAssetRequest {
   slug?: string | null;
   image_url?: string | null;
   summary?: string | null;
+  market_segment?: string | null;
+  suggested_internal_tags?: string[];
+  sources?: string[];
   featured?: boolean;
   visible?: boolean;
   searchable?: boolean;
@@ -74,6 +88,9 @@ export interface AdminSetAssetCatalogRequest {
   slug: string;
   image_url?: string | null;
   summary?: string | null;
+  market_segment?: string | null;
+  suggested_internal_tags?: string[];
+  sources?: string[];
   featured?: boolean;
   visible?: boolean;
   searchable?: boolean;
@@ -164,6 +181,9 @@ export interface AssetResponse {
   symbol: string;
   image_url: string | null;
   summary: string | null;
+  market_segment: string | null;
+  suggested_internal_tags: string[];
+  sources: string[];
   featured: boolean;
   visible: boolean;
   searchable: boolean;
@@ -208,6 +228,33 @@ export interface AssetTransferCheckResponse {
   status_code: string;
   reason_code: string;
   reason: string;
+}
+
+export interface AssetDetailResponse {
+  asset: AssetResponse;
+  treasury: TreasuryAssetResponse | null;
+  compliance_rules: ComplianceAssetRulesResponse | null;
+  valuation: OracleValuationResponse | null;
+  holder: AssetHolderStateResponse | null;
+  unavailable_sections: string[];
+}
+
+export interface AssetHistoryCandleResponse {
+  timestamp: number;
+  value: string;
+  open: string;
+  high: string;
+  low: string;
+  close: string;
+}
+
+export interface AssetHistoryResponse {
+  asset_address: string;
+  range: string;
+  interval: string;
+  last_updated_at: number | null;
+  primary_market_price: AssetHistoryCandleResponse[];
+  underlying_market_price: AssetHistoryCandleResponse[];
 }
 
 export interface AssetTypeListResponse {

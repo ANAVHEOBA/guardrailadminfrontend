@@ -23,6 +23,10 @@ import type {
   AssetCatalogWriteResponse,
   AssetCheckTransferRequest,
   AssetClientOptions,
+  AssetDetailQuery,
+  AssetDetailResponse,
+  AssetHistoryQuery,
+  AssetHistoryResponse,
   AssetFactoryStatusResponse,
   AssetFactoryWriteResponse,
   AssetHolderStateResponse,
@@ -50,6 +54,24 @@ export interface AssetClient {
   fetchAssetType(assetTypeId: string): Promise<AssetTypeResponse>;
   listAssets(query?: ListAssetsQuery): Promise<AssetListResponse>;
   listAssetsByType(assetTypeId: string): Promise<AssetListResponse>;
+  fetchAssetDetail(
+    assetAddress: string,
+    query?: AssetDetailQuery,
+  ): Promise<AssetDetailResponse>;
+  fetchAssetDetailBySlug(slug: string, query?: AssetDetailQuery): Promise<AssetDetailResponse>;
+  fetchAssetDetailByProposal(
+    proposalId: string,
+    query?: AssetDetailQuery,
+  ): Promise<AssetDetailResponse>;
+  fetchAssetHistory(
+    assetAddress: string,
+    query?: AssetHistoryQuery,
+  ): Promise<AssetHistoryResponse>;
+  fetchAssetHistoryBySlug(slug: string, query?: AssetHistoryQuery): Promise<AssetHistoryResponse>;
+  fetchAssetHistoryByProposal(
+    proposalId: string,
+    query?: AssetHistoryQuery,
+  ): Promise<AssetHistoryResponse>;
   fetchAssetByProposal(proposalId: string): Promise<AssetResponse>;
   fetchAssetBySlug(slug: string): Promise<AssetResponse>;
   fetchAsset(assetAddress: string): Promise<AssetResponse>;
@@ -201,6 +223,58 @@ export function createAssetClient(options: AssetClientOptions = {}): AssetClient
       return requestJson<AssetListResponse>(
         baseUrl,
         `/assets/by-type/${encodePathSegment(assetTypeId)}`,
+      );
+    },
+
+    fetchAssetDetail(assetAddress, query) {
+      return requestJson<AssetDetailResponse>(baseUrl, `${assetPath(assetAddress)}/detail`, {
+        query,
+      });
+    },
+
+    fetchAssetDetailBySlug(slug, query) {
+      return requestJson<AssetDetailResponse>(
+        baseUrl,
+        `/assets/slug/${encodePathSegment(slug)}/detail`,
+        {
+          query,
+        },
+      );
+    },
+
+    fetchAssetDetailByProposal(proposalId, query) {
+      return requestJson<AssetDetailResponse>(
+        baseUrl,
+        `/assets/proposals/${encodePathSegment(proposalId)}/detail`,
+        {
+          query,
+        },
+      );
+    },
+
+    fetchAssetHistory(assetAddress, query) {
+      return requestJson<AssetHistoryResponse>(baseUrl, `${assetPath(assetAddress)}/history`, {
+        query,
+      });
+    },
+
+    fetchAssetHistoryBySlug(slug, query) {
+      return requestJson<AssetHistoryResponse>(
+        baseUrl,
+        `/assets/slug/${encodePathSegment(slug)}/history`,
+        {
+          query,
+        },
+      );
+    },
+
+    fetchAssetHistoryByProposal(proposalId, query) {
+      return requestJson<AssetHistoryResponse>(
+        baseUrl,
+        `/assets/proposals/${encodePathSegment(proposalId)}/history`,
+        {
+          query,
+        },
       );
     },
 

@@ -1,5 +1,6 @@
+import { A } from "@solidjs/router";
 import { For, Show } from "solid-js";
-import type { AssetResponse } from "~/lib";
+import { buildPreferredAssetPageHref, type AssetResponse } from "~/lib";
 
 interface PublicAssetSectionsProps {
   assets: AssetResponse[];
@@ -14,7 +15,7 @@ function AssetCard(props: { asset: AssetResponse }) {
   const fallbackLetter = () => asset().symbol.charAt(0).toUpperCase() || "A";
 
   return (
-    <div class="pm-compact-card-shell">
+    <A class="pm-compact-card-shell pm-compact-card-link" href={buildPreferredAssetPageHref(asset())}>
       <article class="pm-compact-card">
         <div class="pm-compact-card__header">
           <div class="pm-compact-card__art">
@@ -54,7 +55,7 @@ function AssetCard(props: { asset: AssetResponse }) {
                 <p class="pm-compact-card__row-label">Subscription</p>
               </div>
               <div class="pm-compact-card__row-actions">
-                <p class="pm-compact-card__metric">${asset().price_per_token}</p>
+                <p class="pm-compact-card__metric">{asset().price_per_token}</p>
               </div>
             </div>
 
@@ -63,7 +64,7 @@ function AssetCard(props: { asset: AssetResponse }) {
                 <p class="pm-compact-card__row-label">Redemption</p>
               </div>
               <div class="pm-compact-card__row-actions">
-                <p class="pm-compact-card__metric">${asset().redemption_price_per_token}</p>
+                <p class="pm-compact-card__metric">{asset().redemption_price_per_token}</p>
               </div>
             </div>
           </div>
@@ -84,7 +85,7 @@ function AssetCard(props: { asset: AssetResponse }) {
           <p class="pm-compact-card__footer-text">{asset().holder_count} holders</p>
         </div>
       </article>
-    </div>
+    </A>
   );
 }
 

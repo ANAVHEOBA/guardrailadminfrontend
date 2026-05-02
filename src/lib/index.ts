@@ -6,5 +6,6 @@ export * from "./auth/index.ts";
 export * from "./compliance/index.ts";
 export * from "./faucet/index.ts";
 export * from "./health/index.ts";
+export * from "./market/index.ts";
 export * from "./oracle/index.ts";
 export * from "./treasury/index.ts";
