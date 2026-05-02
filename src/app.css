@@ -923,6 +923,14 @@ img {
   word-break: break-word;
 }
 
+.pm-market-result__subvalue {
+  color: var(--pm-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
 .pm-market-result__link {
   color: var(--pm-blue);
   font-size: 13px;
@@ -5066,11 +5074,31 @@ img {
   min-width: fit-content;
 }
 
+.pm-compact-card__metric-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.pm-compact-card__metric-stack .pm-compact-card__metric {
+  margin-right: 0;
+}
+
 .pm-compact-card__metric {
   color: var(--pm-text);
   margin-right: 4px;
   font-size: 15px;
   font-weight: 600;
+  white-space: nowrap;
+}
+
+.pm-compact-card__metric-meta {
+  margin: 0;
+  color: var(--pm-text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.35;
   white-space: nowrap;
 }
 
@@ -5946,6 +5974,27 @@ img {
   line-height: 1.5;
 }
 
+.pm-asset-market__price-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pm-asset-market__price-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  color: var(--pm-text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.pm-asset-market__price-meta-label {
+  color: var(--pm-text);
+  font-weight: 700;
+}
+
 .pm-asset-market__delta-chip {
   display: inline-flex;
   align-items: center;
@@ -6032,6 +6081,32 @@ img {
   display: block;
   width: 100%;
   height: 280px;
+}
+
+.pm-asset-market__chart-empty {
+  display: flex;
+  min-height: 280px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 28px;
+  text-align: center;
+}
+
+.pm-asset-market__chart-empty-title {
+  margin: 0;
+  color: var(--pm-text);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.pm-asset-market__chart-empty-copy {
+  margin: 0;
+  max-width: 380px;
+  color: var(--pm-text-secondary);
+  font-size: 13px;
+  line-height: 1.55;
 }
 
 .pm-asset-market__grid-line {

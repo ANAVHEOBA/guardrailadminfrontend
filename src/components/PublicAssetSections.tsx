@@ -1,6 +1,13 @@
 import { A } from "@solidjs/router";
 import { For, Show } from "solid-js";
-import { buildPreferredAssetPageHref, type AssetResponse } from "~/lib";
+import {
+  buildPreferredAssetPageHref,
+  DEFAULT_PAYMENT_TOKEN_DISPLAY_META,
+  formatBaseUnitsLabel,
+  formatPaymentTokenAmountFromBaseUnits,
+  type AssetResponse,
+} from "~/lib";
+import { primePublicAssetDetailFromAsset } from "~/components/asset-detail/data";
 
 interface PublicAssetSectionsProps {
   assets: AssetResponse[];
@@ -10,12 +17,19 @@ interface PublicAssetSectionsProps {
   error?: string | null;
 }
 
-function AssetCard(props: { asset: AssetResponse }) {
+const EAGER_ASSET_IMAGE_COUNT = 6;
+
+function AssetCard(props: { asset: AssetResponse; eager?: boolean }) {
   const asset = () => props.asset;
   const fallbackLetter = () => asset().symbol.charAt(0).toUpperCase() || "A";
 
   return (
-    <A class="pm-compact-card-shell pm-compact-card-link" href={buildPreferredAssetPageHref(asset())}>
+    <A
+      class="pm-compact-card-shell pm-compact-card-link"
+      href={buildPreferredAssetPageHref(asset())}
+      onMouseEnter={() => void primePublicAssetDetailFromAsset(asset())}
+      onFocus={() => void primePublicAssetDetailFromAsset(asset())}
+    >
       <article class="pm-compact-card">
         <div class="pm-compact-card__header">
           <div class="pm-compact-card__art">
@@ -26,9 +40,9 @@ function AssetCard(props: { asset: AssetResponse }) {
               <img
                 src={asset().image_url ?? ""}
                 alt={`${asset().name} card icon`}
-                loading="lazy"
-                decoding="async"
-                fetchpriority="auto"
+                loading={props.eager ? "eager" : "lazy"}
+                decoding={props.eager ? "sync" : "async"}
+                fetchpriority={props.eager ? "high" : "auto"}
               />
             </Show>
           </div>
@@ -55,7 +69,17 @@ function AssetCard(props: { asset: AssetResponse }) {
                 <p class="pm-compact-card__row-label">Subscription</p>
               </div>
               <div class="pm-compact-card__row-actions">
-                <p class="pm-compact-card__metric">{asset().price_per_token}</p>
+                <div class="pm-compact-card__metric-stack">
+                  <p class="pm-compact-card__metric">
+                    {formatPaymentTokenAmountFromBaseUnits(
+                      asset().price_per_token,
+                      DEFAULT_PAYMENT_TOKEN_DISPLAY_META,
+                    )}
+                  </p>
+                  <p class="pm-compact-card__metric-meta">
+                    {formatBaseUnitsLabel(asset().price_per_token)}
+                  </p>
+                </div>
               </div>
             </div>
 
@@ -64,7 +88,17 @@ function AssetCard(props: { asset: AssetResponse }) {
                 <p class="pm-compact-card__row-label">Redemption</p>
               </div>
               <div class="pm-compact-card__row-actions">
-                <p class="pm-compact-card__metric">{asset().redemption_price_per_token}</p>
+                <div class="pm-compact-card__metric-stack">
+                  <p class="pm-compact-card__metric">
+                    {formatPaymentTokenAmountFromBaseUnits(
+                      asset().redemption_price_per_token,
+                      DEFAULT_PAYMENT_TOKEN_DISPLAY_META,
+                    )}
+                  </p>
+                  <p class="pm-compact-card__metric-meta">
+                    {formatBaseUnitsLabel(asset().redemption_price_per_token)}
+                  </p>
+                </div>
               </div>
             </div>
           </div>
@@ -168,7 +202,9 @@ export default function PublicAssetSections(props: PublicAssetSectionsProps) {
             >
               <div class="pm-all-markets__grid">
                 <For each={props.assets}>
-                  {asset => <AssetCard asset={asset} />}
+                  {(asset, index) => (
+                    <AssetCard asset={asset} eager={index() < EAGER_ASSET_IMAGE_COUNT} />
+                  )}
                 </For>
               </div>
             </Show>

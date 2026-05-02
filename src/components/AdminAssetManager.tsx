@@ -3,6 +3,9 @@ import { For, Show, createSignal, onCleanup, onMount, type JSX } from "solid-js"
 import {
   adminClient,
   assetClient,
+  DEFAULT_PAYMENT_TOKEN_DISPLAY_META,
+  formatBaseUnitsLabel,
+  formatPaymentTokenAmountFromBaseUnits,
   marketClient,
   readAdminToken,
   type AdminCreateAssetRequest,
@@ -254,7 +257,17 @@ function AssetCard(props: {
                 <p class="pm-compact-card__row-label">Subscription</p>
               </div>
               <div class="pm-compact-card__row-actions">
-                <p class="pm-compact-card__metric">{asset().price_per_token}</p>
+                <div class="pm-compact-card__metric-stack">
+                  <p class="pm-compact-card__metric">
+                    {formatPaymentTokenAmountFromBaseUnits(
+                      asset().price_per_token,
+                      DEFAULT_PAYMENT_TOKEN_DISPLAY_META,
+                    )}
+                  </p>
+                  <p class="pm-compact-card__metric-meta">
+                    {formatBaseUnitsLabel(asset().price_per_token)}
+                  </p>
+                </div>
               </div>
             </div>
 
@@ -263,7 +276,17 @@ function AssetCard(props: {
                 <p class="pm-compact-card__row-label">Redemption</p>
               </div>
               <div class="pm-compact-card__row-actions">
-                <p class="pm-compact-card__metric">{asset().redemption_price_per_token}</p>
+                <div class="pm-compact-card__metric-stack">
+                  <p class="pm-compact-card__metric">
+                    {formatPaymentTokenAmountFromBaseUnits(
+                      asset().redemption_price_per_token,
+                      DEFAULT_PAYMENT_TOKEN_DISPLAY_META,
+                    )}
+                  </p>
+                  <p class="pm-compact-card__metric-meta">
+                    {formatBaseUnitsLabel(asset().redemption_price_per_token)}
+                  </p>
+                </div>
               </div>
             </div>
         </div>
@@ -1809,13 +1832,25 @@ export default function AdminAssetManager() {
                 <div>
                   <span class="pm-market-result__label">Subscription price</span>
                   <span class="pm-market-result__value">
-                    {createAssetTask.data()!.asset.price_per_token}
+                    {formatPaymentTokenAmountFromBaseUnits(
+                      createAssetTask.data()!.asset.price_per_token,
+                      DEFAULT_PAYMENT_TOKEN_DISPLAY_META,
+                    )}
+                  </span>
+                  <span class="pm-market-result__subvalue">
+                    {formatBaseUnitsLabel(createAssetTask.data()!.asset.price_per_token)}
                   </span>
                 </div>
                 <div>
                   <span class="pm-market-result__label">Redemption price</span>
                   <span class="pm-market-result__value">
-                    {createAssetTask.data()!.asset.redemption_price_per_token}
+                    {formatPaymentTokenAmountFromBaseUnits(
+                      createAssetTask.data()!.asset.redemption_price_per_token,
+                      DEFAULT_PAYMENT_TOKEN_DISPLAY_META,
+                    )}
+                  </span>
+                  <span class="pm-market-result__subvalue">
+                    {formatBaseUnitsLabel(createAssetTask.data()!.asset.redemption_price_per_token)}
                   </span>
                 </div>
                 <div>
@@ -1933,13 +1968,25 @@ export default function AdminAssetManager() {
                 <div>
                   <span class="pm-market-result__label">Subscription price</span>
                   <span class="pm-market-result__value">
-                    {setPricingTask.data()!.asset.price_per_token}
+                    {formatPaymentTokenAmountFromBaseUnits(
+                      setPricingTask.data()!.asset.price_per_token,
+                      DEFAULT_PAYMENT_TOKEN_DISPLAY_META,
+                    )}
+                  </span>
+                  <span class="pm-market-result__subvalue">
+                    {formatBaseUnitsLabel(setPricingTask.data()!.asset.price_per_token)}
                   </span>
                 </div>
                 <div>
                   <span class="pm-market-result__label">Redemption price</span>
                   <span class="pm-market-result__value">
-                    {setPricingTask.data()!.asset.redemption_price_per_token}
+                    {formatPaymentTokenAmountFromBaseUnits(
+                      setPricingTask.data()!.asset.redemption_price_per_token,
+                      DEFAULT_PAYMENT_TOKEN_DISPLAY_META,
+                    )}
+                  </span>
+                  <span class="pm-market-result__subvalue">
+                    {formatBaseUnitsLabel(setPricingTask.data()!.asset.redemption_price_per_token)}
                   </span>
                 </div>
                 <div class="pm-market-result__detail--full">
