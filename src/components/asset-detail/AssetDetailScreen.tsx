@@ -12,8 +12,11 @@ import {
   type AssetDetailResponse,
   type AssetHistoryResponse,
   type PaymentTokenQuoteResponse,
+  type TreasuryAssetResponse,
 } from "~/lib";
 import { getErrorMessage } from "~/lib/api";
+import type { ComplianceAssetRulesResponse } from "~/lib";
+import AssetDetailComplianceSection from "./AssetDetailComplianceSection";
 import AssetDetailErrorState from "./AssetDetailErrorState";
 import AssetDetailHero from "./AssetDetailHero";
 import AssetDetailPageHeader from "./AssetDetailPageHeader";
@@ -28,6 +31,7 @@ import {
 import AssetDetailSourcesSection from "./AssetDetailSourcesSection";
 import AssetDetailStatsSection from "./AssetDetailStatsSection";
 import AssetDetailSummaryGrid from "./AssetDetailSummaryGrid";
+import AssetDetailTreasurySection from "./AssetDetailTreasurySection";
 import {
   formatLookupLabel,
   readCategoryChips,
@@ -374,6 +378,32 @@ export default function AssetDetailScreen(props: AssetDetailScreenProps) {
     void loadHistory(identifier, range);
   });
 
+  const applyComplianceRules = (rules: ComplianceAssetRulesResponse) => {
+    setDetail(current => {
+      if (!current) {
+        return current;
+      }
+
+      return {
+        ...current,
+        compliance_rules: rules,
+      };
+    });
+  };
+
+  const applyTreasuryAsset = (treasury: TreasuryAssetResponse) => {
+    setDetail(current => {
+      if (!current) {
+        return current;
+      }
+
+      return {
+        ...current,
+        treasury,
+      };
+    });
+  };
+
   return (
     <div class="pm-page">
       <Title>{title()}</Title>
@@ -461,6 +491,18 @@ export default function AssetDetailScreen(props: AssetDetailScreenProps) {
                         asset={registryAsset}
                         detail={assetDetail}
                         displayedRoutes={displayedRoutes}
+                      />
+
+                      <AssetDetailComplianceSection
+                        asset={registryAsset}
+                        rules={assetDetail?.compliance_rules ?? null}
+                        onRulesUpdated={applyComplianceRules}
+                      />
+
+                      <AssetDetailTreasurySection
+                        asset={registryAsset}
+                        treasury={assetDetail?.treasury ?? null}
+                        onTreasuryUpdated={applyTreasuryAsset}
                       />
 
                       <AssetDetailSourcesSection asset={registryAsset} />
