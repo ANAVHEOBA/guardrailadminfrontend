@@ -1,7 +1,10 @@
 import {
   convertBaseUnitsToDisplayNumber,
   DEFAULT_PAYMENT_TOKEN_DISPLAY_META,
+  formatBaseUnitsLabel,
+  formatPaymentTokenAmountFromBaseUnits,
   type AssetResponse,
+  type PaymentTokenDisplayMeta,
 } from "~/lib";
 
 import type { AssetDetailLookupMode, PriceMode } from "./types";
@@ -164,6 +167,27 @@ export function formatDisplayNumber(
     maximumFractionDigits,
     minimumFractionDigits: value > 0 && value < 1 ? Math.min(2, maximumFractionDigits) : 0,
   }).format(value);
+}
+
+export function formatPaymentTokenValue(
+  value: string | null | undefined,
+  meta: PaymentTokenDisplayMeta | null | undefined = DEFAULT_PAYMENT_TOKEN_DISPLAY_META,
+): string {
+  return formatPaymentTokenAmountFromBaseUnits(value, meta);
+}
+
+export function formatPaymentTokenValueWithRaw(
+  value: string | null | undefined,
+  meta: PaymentTokenDisplayMeta | null | undefined = DEFAULT_PAYMENT_TOKEN_DISPLAY_META,
+): string {
+  const settlement = formatPaymentTokenAmountFromBaseUnits(value, meta);
+  const raw = formatBaseUnitsLabel(value);
+
+  if (settlement === "Not available") {
+    return settlement;
+  }
+
+  return `${settlement} · ${raw}`;
 }
 
 export function parseNumericString(value: string | null | undefined): number | null {

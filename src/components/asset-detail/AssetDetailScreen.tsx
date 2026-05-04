@@ -11,6 +11,7 @@ import {
   formatPaymentTokenAmountFromBaseUnits,
   type AssetDetailResponse,
   type AssetHistoryResponse,
+  type OracleValuationResponse,
   type PaymentTokenQuoteResponse,
   type TreasuryAssetResponse,
 } from "~/lib";
@@ -19,6 +20,7 @@ import type { ComplianceAssetRulesResponse } from "~/lib";
 import AssetDetailComplianceSection from "./AssetDetailComplianceSection";
 import AssetDetailErrorState from "./AssetDetailErrorState";
 import AssetDetailHero from "./AssetDetailHero";
+import AssetDetailOracleSection from "./AssetDetailOracleSection";
 import AssetDetailPageHeader from "./AssetDetailPageHeader";
 import AssetDetailReferencePanels from "./AssetDetailReferencePanels";
 import {
@@ -27,6 +29,10 @@ import {
   readCachedAssetHistory,
   readCachedPaymentTokenQuote,
   readProjectedAssetDetailView,
+  syncAssetIntoDetailCaches,
+  syncComplianceRulesIntoDetailCaches,
+  syncTreasuryIntoDetailCaches,
+  syncValuationIntoDetailCaches,
 } from "./data";
 import AssetDetailSourcesSection from "./AssetDetailSourcesSection";
 import AssetDetailStatsSection from "./AssetDetailStatsSection";
@@ -378,7 +384,26 @@ export default function AssetDetailScreen(props: AssetDetailScreenProps) {
     void loadHistory(identifier, range);
   });
 
+  createEffect(() => {
+    const currentDetail = detail();
+
+    if (!currentDetail?.asset) {
+      return;
+    }
+
+    console.info("[asset-detail] treasury detail state", {
+      assetAddress: currentDetail.asset.asset_address,
+      treasury: currentDetail.treasury,
+    });
+  });
+
   const applyComplianceRules = (rules: ComplianceAssetRulesResponse) => {
+    const currentAsset = asset();
+
+    if (currentAsset) {
+      syncComplianceRulesIntoDetailCaches(currentAsset.asset_address, rules);
+    }
+
     setDetail(current => {
       if (!current) {
         return current;
@@ -392,6 +417,17 @@ export default function AssetDetailScreen(props: AssetDetailScreenProps) {
   };
 
   const applyTreasuryAsset = (treasury: TreasuryAssetResponse) => {
+    const currentAsset = asset();
+
+    if (currentAsset) {
+      syncTreasuryIntoDetailCaches(currentAsset.asset_address, treasury);
+    }
+
+    console.info("[asset-detail] applyTreasuryAsset", {
+      assetAddress: currentAsset?.asset_address ?? null,
+      treasury,
+    });
+
     setDetail(current => {
       if (!current) {
         return current;
@@ -400,6 +436,56 @@ export default function AssetDetailScreen(props: AssetDetailScreenProps) {
       return {
         ...current,
         treasury,
+      };
+    });
+  };
+
+  const applyValuationUpdate = (valuation: OracleValuationResponse) => {
+    const currentAsset = asset();
+
+    if (currentAsset) {
+      syncValuationIntoDetailCaches(currentAsset.asset_address, valuation);
+    }
+
+    setDetail(current => {
+      if (!current) {
+        return current;
+      }
+
+      return {
+        ...current,
+        valuation,
+      };
+    });
+  };
+
+  const applyOraclePricingUpdate = (subscriptionPrice: string, redemptionPrice: string) => {
+    setDetail(current => {
+      if (!current) {
+        return current;
+      }
+
+      return {
+        ...current,
+        asset: {
+          ...current.asset,
+          price_per_token: subscriptionPrice,
+          redemption_price_per_token: redemptionPrice,
+        },
+      };
+    });
+  };
+
+  const applyAssetUpdate = (updatedAsset: AssetResponse) => {
+    syncAssetIntoDetailCaches(updatedAsset);
+    setDetail(current => {
+      if (!current) {
+        return current;
+      }
+
+      return {
+        ...current,
+        asset: updatedAsset,
       };
     });
   };
@@ -426,7 +512,6 @@ export default function AssetDetailScreen(props: AssetDetailScreenProps) {
               <Show when={asset()}>
                 {currentAsset => {
                   const registryAsset = currentAsset();
-                  const assetDetail = detail();
                   const statusTone = readStatusTone(registryAsset.asset_state_label);
                   const displayedRoutes: DisplayedRoute[] = [
                     {
@@ -474,11 +559,16 @@ export default function AssetDetailScreen(props: AssetDetailScreenProps) {
                         timeRanges={TIME_RANGES}
                       />
 
-                      <AssetDetailSummaryGrid asset={registryAsset} detail={assetDetail} />
+                      <AssetDetailSummaryGrid
+                        asset={registryAsset}
+                        detail={detail()}
+                        paymentTokenMeta={paymentTokenMeta()}
+                      />
 
                       <AssetDetailStatsSection
                         asset={registryAsset}
-                        detail={assetDetail}
+                        detail={detail()}
+                        paymentTokenMeta={paymentTokenMeta()}
                         redemptionBaseUnitsLabel={redemptionBaseUnitsLabel()}
                         redemptionMarketReferencePrice={redemptionMarketReferencePrice()}
                         redemptionSettlementPrice={redemptionSettlementPrice()}
@@ -489,20 +579,30 @@ export default function AssetDetailScreen(props: AssetDetailScreenProps) {
 
                       <AssetDetailReferencePanels
                         asset={registryAsset}
-                        detail={assetDetail}
+                        detail={detail()}
                         displayedRoutes={displayedRoutes}
+                        onAssetUpdated={applyAssetUpdate}
                       />
 
                       <AssetDetailComplianceSection
                         asset={registryAsset}
-                        rules={assetDetail?.compliance_rules ?? null}
+                        paymentTokenMeta={paymentTokenMeta()}
+                        rules={detail()?.compliance_rules ?? null}
                         onRulesUpdated={applyComplianceRules}
                       />
 
                       <AssetDetailTreasurySection
                         asset={registryAsset}
-                        treasury={assetDetail?.treasury ?? null}
+                        paymentTokenMeta={paymentTokenMeta()}
+                        treasury={detail()?.treasury ?? null}
                         onTreasuryUpdated={applyTreasuryAsset}
+                      />
+
+                      <AssetDetailOracleSection
+                        asset={registryAsset}
+                        valuation={detail()?.valuation ?? null}
+                        onPricingUpdated={applyOraclePricingUpdate}
+                        onValuationUpdated={applyValuationUpdate}
                       />
 
                       <AssetDetailSourcesSection asset={registryAsset} />

@@ -2032,6 +2032,15 @@ img {
   letter-spacing: -0.01em;
 }
 
+.pm-admin-navbar__session-subvalue {
+  display: block;
+  margin-top: 2px;
+  color: var(--pm-text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
 .pm-account-menu--admin {
   width: min(320px, calc(100vw - 24px));
 }
@@ -2040,6 +2049,37 @@ img {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.pm-admin-faucet-form {
+  display: grid;
+  gap: 14px;
+}
+
+.pm-admin-faucet-form__field {
+  display: grid;
+  gap: 8px;
+}
+
+.pm-admin-faucet-form__field > span {
+  color: var(--pm-text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+}
+
+.pm-admin-faucet-form__status {
+  margin: 0;
+  color: var(--pm-green);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.pm-admin-faucet-form__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 .pm-admin-home__main {

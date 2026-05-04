@@ -1,15 +1,12 @@
 import type {
   AssetDetailResponse,
   AssetHistoryResponse,
+  AssetPaymentTokenQuoteResponse,
   AssetResponse,
-  ComplianceAssetRulesResponse,
-  PaymentTokenQuoteResponse,
-  OracleValuationResponse,
-  TreasuryAssetResponse,
 } from "~/lib";
 
-import type { AssetDetailLookupMode, TimeRange } from "./types";
 import { fetchAssetDetail, fetchAssetHistory, fetchAssetPaymentTokenQuote } from "./api";
+import type { AssetDetailLookupMode, TimeRange } from "./types";
 
 const ASSET_FEED_STORAGE_KEY = "guardrail-asset-feed/v2";
 const LEGACY_ASSET_FEED_STORAGE_KEY = "guardrail-asset-feed/v1";
@@ -20,10 +17,10 @@ interface AssetFeedState {
   hasMore: boolean;
 }
 
-interface AssetDetailBundle {
+export interface AssetDetailBundle {
   detail: AssetDetailResponse;
   historyByRange: Partial<Record<TimeRange, AssetHistoryResponse>>;
-  paymentTokenQuote: PaymentTokenQuoteResponse | null;
+  paymentTokenQuote: AssetPaymentTokenQuoteResponse | null;
 }
 
 const assetBundleCache = new Map<string, AssetDetailBundle>();
@@ -62,18 +59,6 @@ function readStoredFeed(): AssetFeedState | null {
     return isAssetFeedState(parsed) ? parsed : null;
   } catch {
     return null;
-  }
-}
-
-function writeStoredFeed(feed: AssetFeedState) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  try {
-    window.sessionStorage.setItem(ASSET_FEED_STORAGE_KEY, JSON.stringify(feed));
-  } catch {
-    // Ignore storage write failures and rely on in-memory state.
   }
 }
 
@@ -149,14 +134,6 @@ function writeCachedBundle(bundle: AssetDetailBundle) {
   }
 }
 
-function assetsMatch(left: AssetResponse, right: AssetResponse): boolean {
-  return (
-    left.asset_address.toLowerCase() === right.asset_address.toLowerCase() ||
-    left.proposal_id.toLowerCase() === right.proposal_id.toLowerCase() ||
-    (Boolean(left.slug) && Boolean(right.slug) && left.slug?.toLowerCase() === right.slug?.toLowerCase())
-  );
-}
-
 function buildBundleRequestKey(
   mode: AssetDetailLookupMode,
   identifier: string,
@@ -165,10 +142,7 @@ function buildBundleRequestKey(
   return `${mode}:${identifier.trim().toLowerCase()}:${range}`;
 }
 
-function buildHistoryRequestKey(
-  asset: AssetResponse,
-  range: TimeRange,
-): string {
+function buildHistoryRequestKey(asset: AssetResponse, range: TimeRange): string {
   return `${asset.asset_address.toLowerCase()}:${range}`;
 }
 
@@ -198,7 +172,7 @@ export function readCachedAssetHistory(
 export function readCachedPaymentTokenQuote(
   mode: AssetDetailLookupMode,
   identifier: string,
-): PaymentTokenQuoteResponse | null {
+): AssetPaymentTokenQuoteResponse | null {
   return readCachedBundle(mode, identifier)?.paymentTokenQuote ?? null;
 }
 
@@ -223,20 +197,11 @@ export async function primeAssetDetailBundle(
   const request = (async () => {
     const detailPromise = cachedBundle?.detail
       ? Promise.resolve(cachedBundle.detail)
-      : fetchAssetDetail(mode, identifier).catch(error => {
-        const projectedAsset = findAssetInStoredFeed(identifier);
-
-        if (projectedAsset) {
-          return buildProjectedDetail(projectedAsset);
-        }
-
-        throw error;
-      });
+      : fetchAssetDetail(mode, identifier);
     const historyPromise = fetchAssetHistory(mode, identifier, range).catch(() => null);
     const [detail, history] = await Promise.all([detailPromise, historyPromise]);
     const paymentTokenQuote =
-      cachedBundle?.paymentTokenQuote ??
-      (await fetchAssetPaymentTokenQuote(detail.asset).catch(() => null));
+      cachedBundle?.paymentTokenQuote ?? (await fetchAssetPaymentTokenQuote(detail.asset).catch(() => null));
     const nextBundle: AssetDetailBundle = {
       detail,
       historyByRange: {
@@ -276,21 +241,23 @@ export async function loadAssetHistoryRange(
     return cachedRequest;
   }
 
-  const request = fetchAssetHistory(mode, identifier, range).then(history => {
-    const nextBundle: AssetDetailBundle = {
-      detail,
-      historyByRange: {
-        ...(cachedBundle?.historyByRange ?? {}),
-        [range]: history,
-      },
-      paymentTokenQuote: cachedBundle?.paymentTokenQuote ?? null,
-    };
+  const request = fetchAssetHistory(mode, identifier, range)
+    .then(history => {
+      const nextBundle: AssetDetailBundle = {
+        detail,
+        historyByRange: {
+          ...(cachedBundle?.historyByRange ?? {}),
+          [range]: history,
+        },
+        paymentTokenQuote: cachedBundle?.paymentTokenQuote ?? null,
+      };
 
-    writeCachedBundle(nextBundle);
-    return history;
-  }).finally(() => {
-    assetHistoryRequestCache.delete(requestKey);
-  });
+      writeCachedBundle(nextBundle);
+      return history;
+    })
+    .finally(() => {
+      assetHistoryRequestCache.delete(requestKey);
+    });
 
   assetHistoryRequestCache.set(requestKey, request);
   return request;
@@ -303,92 +270,4 @@ export function primePublicAssetDetailFromAsset(
   const identifier = asset.slug ?? asset.asset_address;
 
   return primeAssetDetailBundle("public", identifier, range);
-}
-
-export function syncAssetIntoDetailCaches(updatedAsset: AssetResponse) {
-  const cachedFeed = readStoredFeed();
-
-  if (cachedFeed) {
-    const nextAssets = cachedFeed.assets.map(asset =>
-      assetsMatch(asset, updatedAsset) ? updatedAsset : asset,
-    );
-
-    writeStoredFeed({
-      ...cachedFeed,
-      assets: nextAssets,
-    });
-  }
-
-  for (const [key, bundle] of assetBundleCache.entries()) {
-    if (!assetsMatch(bundle.detail.asset, updatedAsset)) {
-      continue;
-    }
-
-    const nextBundle: AssetDetailBundle = {
-      ...bundle,
-      detail: {
-        ...bundle.detail,
-        asset: updatedAsset,
-      },
-    };
-
-    assetBundleCache.set(key, nextBundle);
-    writeCachedBundle(nextBundle);
-  }
-}
-
-function syncDetailSectionIntoCaches(
-  assetAddress: string,
-  updater: (detail: AssetDetailResponse) => AssetDetailResponse,
-) {
-  const normalizedAssetAddress = assetAddress.trim().toLowerCase();
-
-  for (const [key, bundle] of assetBundleCache.entries()) {
-    if (bundle.detail.asset.asset_address.toLowerCase() !== normalizedAssetAddress) {
-      continue;
-    }
-
-    const nextBundle: AssetDetailBundle = {
-      ...bundle,
-      detail: updater(bundle.detail),
-    };
-
-    assetBundleCache.set(key, nextBundle);
-    writeCachedBundle(nextBundle);
-  }
-}
-
-export function syncTreasuryIntoDetailCaches(
-  assetAddress: string,
-  treasury: TreasuryAssetResponse,
-) {
-  syncDetailSectionIntoCaches(assetAddress, detail => ({
-    ...detail,
-    treasury,
-    unavailable_sections: detail.unavailable_sections.filter(section => section !== "treasury"),
-  }));
-}
-
-export function syncComplianceRulesIntoDetailCaches(
-  assetAddress: string,
-  complianceRules: ComplianceAssetRulesResponse,
-) {
-  syncDetailSectionIntoCaches(assetAddress, detail => ({
-    ...detail,
-    compliance_rules: complianceRules,
-    unavailable_sections: detail.unavailable_sections.filter(
-      section => section !== "compliance_rules",
-    ),
-  }));
-}
-
-export function syncValuationIntoDetailCaches(
-  assetAddress: string,
-  valuation: OracleValuationResponse,
-) {
-  syncDetailSectionIntoCaches(assetAddress, detail => ({
-    ...detail,
-    valuation,
-    unavailable_sections: detail.unavailable_sections.filter(section => section !== "valuation"),
-  }));
 }

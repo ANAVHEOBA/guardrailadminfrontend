@@ -4,12 +4,15 @@ import AdminModal from "~/components/AdminModal";
 import { useAdminAuth } from "~/lib/admin-auth-context";
 import {
   complianceClient,
+  DEFAULT_PAYMENT_TOKEN_DISPLAY_META,
+  formatPaymentTokenAmountFromBaseUnits,
   readAdminToken,
   type AdminSetComplianceAssetRulesRequest,
   type AdminUpsertComplianceInvestorRequest,
   type AssetResponse,
   type ComplianceAssetRulesResponse,
   type ComplianceInvestorResponse,
+  type PaymentTokenDisplayMeta,
 } from "~/lib";
 import { getErrorMessage } from "~/lib/api";
 import { useAsyncTask } from "~/lib/hooks/useAsyncTask";
@@ -31,6 +34,7 @@ type ComplianceModalView =
 interface AssetDetailComplianceSectionProps {
   asset: AssetResponse;
   rules: ComplianceAssetRulesResponse | null;
+  paymentTokenMeta?: PaymentTokenDisplayMeta | null;
   onRulesUpdated?: (rules: ComplianceAssetRulesResponse) => void;
 }
 
@@ -58,16 +62,167 @@ function buildInvestorDraft(
   };
 }
 
+interface RulesDraftState {
+  transfers_enabled: boolean;
+  subscriptions_enabled: boolean;
+  redemptions_enabled: boolean;
+  requires_accreditation: boolean;
+  min_investment: string;
+  max_investor_balance: string;
+}
+
+function normalizeIntegerString(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = value.trim();
+
+  if (!/^\d+$/.test(normalized)) {
+    return null;
+  }
+
+  return normalized.replace(/^0+(?=\d)/, "") || "0";
+}
+
+function parseDisplayTokenAmountToBaseUnits(
+  value: string,
+  meta: PaymentTokenDisplayMeta | null | undefined,
+): string {
+  const symbol = (meta?.symbol?.trim() || DEFAULT_PAYMENT_TOKEN_DISPLAY_META.symbol).toLowerCase();
+  const decimals = Math.max(0, meta?.decimals ?? DEFAULT_PAYMENT_TOKEN_DISPLAY_META.decimals);
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(new RegExp(`\\s*${symbol}\\s*$`), "")
+    .replace(/,/g, "")
+    .trim();
+  const matcher = new RegExp(`^\\d+(\\.\\d{1,${decimals}})?$`);
+
+  if (!matcher.test(normalized)) {
+    throw new Error(
+      `Amount must be a valid ${symbol.toUpperCase()} value with up to ${decimals} decimals.`,
+    );
+  }
+
+  const [wholeRaw, fractionalRaw = ""] = normalized.split(".");
+  const whole = wholeRaw.replace(/^0+(?=\d)/, "");
+  const fractional = fractionalRaw.padEnd(decimals, "0");
+  const baseUnits = `${whole}${fractional}`.replace(/^0+/, "");
+
+  return baseUnits.length > 0 ? baseUnits : "0";
+}
+
+function formatTokenBaseUnitsForInput(
+  value: string | null | undefined,
+  meta: PaymentTokenDisplayMeta | null | undefined,
+): string {
+  const normalized = normalizeIntegerString(value);
+
+  if (!normalized) {
+    return "";
+  }
+
+  const decimals = Math.max(0, meta?.decimals ?? DEFAULT_PAYMENT_TOKEN_DISPLAY_META.decimals);
+
+  if (decimals === 0) {
+    return formatNumericString(normalized);
+  }
+
+  const padded = normalized.padStart(decimals + 1, "0");
+  const wholeDigits = padded.slice(0, -decimals) || "0";
+  const fractionDigits = padded.slice(-decimals).replace(/0+$/, "");
+  const whole = formatNumericString(wholeDigits);
+
+  return fractionDigits ? `${whole}.${fractionDigits}` : whole;
+}
+
+function ceilDivide(dividend: bigint, divisor: bigint): bigint {
+  if (divisor <= BigInt(0)) {
+    throw new Error("Asset subscription price must be greater than zero.");
+  }
+
+  return (dividend + divisor - BigInt(1)) / divisor;
+}
+
+function convertSettlementDisplayToRuleUnits(
+  value: string,
+  pricePerToken: string,
+  meta: PaymentTokenDisplayMeta | null | undefined,
+): string {
+  const paymentTokenBaseUnits = BigInt(parseDisplayTokenAmountToBaseUnits(value, meta));
+  const pricePerTokenUnits = BigInt(
+    normalizeIntegerString(pricePerToken) ?? "0",
+  );
+
+  return ceilDivide(paymentTokenBaseUnits, pricePerTokenUnits).toString();
+}
+
+function convertRuleUnitsToSettlementBaseUnits(
+  value: string | null | undefined,
+  pricePerToken: string | null | undefined,
+): string | null {
+  const normalizedValue = normalizeIntegerString(value);
+  const normalizedPrice = normalizeIntegerString(pricePerToken);
+
+  if (!normalizedValue || !normalizedPrice) {
+    return null;
+  }
+
+  return (BigInt(normalizedValue) * BigInt(normalizedPrice)).toString();
+}
+
+function formatRuleUnitsAsSettlement(
+  value: string | null | undefined,
+  pricePerToken: string,
+  meta: PaymentTokenDisplayMeta | null | undefined,
+): string {
+  const settlementBaseUnits = convertRuleUnitsToSettlementBaseUnits(value, pricePerToken);
+
+  if (!settlementBaseUnits) {
+    return "Not available";
+  }
+
+  return formatPaymentTokenAmountFromBaseUnits(settlementBaseUnits, meta);
+}
+
+function formatRuleValueForDisplay(
+  value: string | null | undefined,
+  pricePerToken: string,
+  meta: PaymentTokenDisplayMeta | null | undefined,
+): string {
+  const settlementLabel = formatRuleUnitsAsSettlement(value, pricePerToken, meta);
+  const rawUnits = normalizeIntegerString(value);
+
+  if (!rawUnits) {
+    return settlementLabel;
+  }
+
+  return `${settlementLabel} · ${formatNumericString(rawUnits)} asset units`;
+}
+
 function buildRulesDraft(
   rules: ComplianceAssetRulesResponse | null | undefined,
-): AdminSetComplianceAssetRulesRequest {
+  asset: AssetResponse,
+  paymentTokenMeta: PaymentTokenDisplayMeta | null | undefined,
+): RulesDraftState {
+  const minInvestmentSettlement = convertRuleUnitsToSettlementBaseUnits(
+    rules?.min_investment ?? "0",
+    asset.price_per_token,
+  );
+  const maxInvestorBalanceSettlement = convertRuleUnitsToSettlementBaseUnits(
+    rules?.max_investor_balance ?? "0",
+    asset.price_per_token,
+  );
+
   return {
     transfers_enabled: rules?.transfers_enabled ?? false,
     subscriptions_enabled: rules?.subscriptions_enabled ?? false,
     redemptions_enabled: rules?.redemptions_enabled ?? false,
     requires_accreditation: rules?.requires_accreditation ?? false,
-    min_investment: rules?.min_investment ?? "0",
-    max_investor_balance: rules?.max_investor_balance ?? "0",
+    min_investment: formatTokenBaseUnitsForInput(minInvestmentSettlement, paymentTokenMeta) || "0",
+    max_investor_balance:
+      formatTokenBaseUnitsForInput(maxInvestorBalanceSettlement, paymentTokenMeta) || "0",
   };
 }
 
@@ -109,9 +264,35 @@ export default function AssetDetailComplianceSection(
   const [investorDraft, setInvestorDraft] = createSignal<InvestorDraftState>(
     buildInvestorDraft(null),
   );
-  const [rulesDraft, setRulesDraft] = createSignal<AdminSetComplianceAssetRulesRequest>(
-    buildRulesDraft(props.rules),
+  const [rulesDraft, setRulesDraft] = createSignal<RulesDraftState>(
+    buildRulesDraft(props.rules, props.asset, props.paymentTokenMeta),
   );
+  const paymentTokenMeta = () => props.paymentTokenMeta ?? DEFAULT_PAYMENT_TOKEN_DISPLAY_META;
+  const subscriptionSettlementLabel = createMemo(() =>
+    formatPaymentTokenAmountFromBaseUnits(props.asset.price_per_token, paymentTokenMeta()),
+  );
+  const previewMinInvestmentRuleUnits = createMemo(() => {
+    try {
+      return convertSettlementDisplayToRuleUnits(
+        rulesDraft().min_investment,
+        props.asset.price_per_token,
+        paymentTokenMeta(),
+      );
+    } catch {
+      return null;
+    }
+  });
+  const previewMaxInvestorBalanceRuleUnits = createMemo(() => {
+    try {
+      return convertSettlementDisplayToRuleUnits(
+        rulesDraft().max_investor_balance,
+        props.asset.price_per_token,
+        paymentTokenMeta(),
+      );
+    } catch {
+      return null;
+    }
+  });
 
   const adminToken = () => auth.session()?.token ?? readAdminToken();
   const isAdminConnected = () => Boolean(auth.profile() && adminToken());
@@ -137,7 +318,7 @@ export default function AssetDetailComplianceSection(
     setRulesUpdateError(null);
     setLookupWallet("");
     setInvestorDraft(buildInvestorDraft(null));
-    setRulesDraft(buildRulesDraft(props.rules));
+    setRulesDraft(buildRulesDraft(props.rules, props.asset, props.paymentTokenMeta));
     rulesTask.reset();
     investorTask.reset();
     upsertInvestorTask.reset();
@@ -178,7 +359,7 @@ export default function AssetDetailComplianceSection(
     }
 
     if (view === "set-rules") {
-      setRulesDraft(buildRulesDraft(currentRules()));
+      setRulesDraft(buildRulesDraft(currentRules(), props.asset, props.paymentTokenMeta));
     }
 
     setActiveModal(view);
@@ -254,17 +435,33 @@ export default function AssetDetailComplianceSection(
         subscriptions_enabled: draft.subscriptions_enabled,
         redemptions_enabled: draft.redemptions_enabled,
         requires_accreditation: draft.requires_accreditation,
-        min_investment: requireTextValue(draft.min_investment, "Min investment"),
-        max_investor_balance: requireTextValue(
-          draft.max_investor_balance,
-          "Max investor balance",
+        min_investment: convertSettlementDisplayToRuleUnits(
+          requireTextValue(draft.min_investment, "Min investment"),
+          props.asset.price_per_token,
+          paymentTokenMeta(),
+        ),
+        max_investor_balance: convertSettlementDisplayToRuleUnits(
+          requireTextValue(draft.max_investor_balance, "Max investor balance"),
+          props.asset.price_per_token,
+          paymentTokenMeta(),
         ),
       };
+      console.info("[asset-compliance] setAssetRules:start", {
+        assetAddress: props.asset.asset_address,
+        assetPricePerToken: props.asset.price_per_token,
+        paymentTokenMeta: paymentTokenMeta(),
+        input: draft,
+        payload,
+      });
 
       const response = await setRulesTask.run(token, payload);
+      console.info("[asset-compliance] setAssetRules:success", response);
       props.onRulesUpdated?.(response.asset_rules);
-      setRulesDraft(buildRulesDraft(response.asset_rules));
+      setRulesDraft(
+        buildRulesDraft(response.asset_rules, props.asset, props.paymentTokenMeta),
+      );
     } catch (error) {
+      console.error("[asset-compliance] setAssetRules:error", error);
       setRulesUpdateError(getErrorMessage(error));
     }
   }
@@ -335,13 +532,21 @@ export default function AssetDetailComplianceSection(
                 <div class="pm-asset-market__stat-row">
                   <span class="pm-asset-market__stat-label">Min investment</span>
                   <span class="pm-asset-market__stat-value">
-                    {formatNumericString(rules().min_investment)}
+                    {formatRuleValueForDisplay(
+                      rules().min_investment,
+                      props.asset.price_per_token,
+                      paymentTokenMeta(),
+                    )}
                   </span>
                 </div>
                 <div class="pm-asset-market__stat-row">
                   <span class="pm-asset-market__stat-label">Max investor balance</span>
                   <span class="pm-asset-market__stat-value">
-                    {formatNumericString(rules().max_investor_balance)}
+                    {formatRuleValueForDisplay(
+                      rules().max_investor_balance,
+                      props.asset.price_per_token,
+                      paymentTokenMeta(),
+                    )}
                   </span>
                 </div>
               </div>
@@ -703,16 +908,24 @@ export default function AssetDetailComplianceSection(
                       {formatBooleanValue(rules().requires_accreditation)}
                     </span>
                   </div>
-                  <div class="pm-asset-market__stat-row">
+                <div class="pm-asset-market__stat-row">
                     <span class="pm-asset-market__stat-label">Min investment</span>
                     <span class="pm-asset-market__stat-value">
-                      {formatNumericString(rules().min_investment)}
+                      {formatRuleValueForDisplay(
+                        rules().min_investment,
+                        props.asset.price_per_token,
+                        paymentTokenMeta(),
+                      )}
                     </span>
                   </div>
                   <div class="pm-asset-market__stat-row">
                     <span class="pm-asset-market__stat-label">Max investor balance</span>
                     <span class="pm-asset-market__stat-value">
-                      {formatNumericString(rules().max_investor_balance)}
+                      {formatRuleValueForDisplay(
+                        rules().max_investor_balance,
+                        props.asset.price_per_token,
+                        paymentTokenMeta(),
+                      )}
                     </span>
                   </div>
                   <div class="pm-asset-market__stat-row">
@@ -757,7 +970,7 @@ export default function AssetDetailComplianceSection(
             <form class="pm-market-form" onSubmit={handleSetRulesSubmit}>
               <div class="pm-market-fields">
                 <label class="pm-field">
-                  <span class="pm-field__label">Min investment</span>
+                  <span class="pm-field__label">Min investment (USDC)</span>
                   <input
                     class="pm-field__input"
                     type="text"
@@ -771,7 +984,7 @@ export default function AssetDetailComplianceSection(
                   />
                 </label>
                 <label class="pm-field">
-                  <span class="pm-field__label">Max investor balance</span>
+                  <span class="pm-field__label">Max investor balance (USDC)</span>
                   <input
                     class="pm-field__input"
                     type="text"
@@ -836,6 +1049,29 @@ export default function AssetDetailComplianceSection(
                   />
                   <span>Accreditation required</span>
                 </label>
+              </div>
+              <p class="pm-asset-market__panel-subcopy">
+                Enter display {paymentTokenMeta().symbol} values like <code>1</code> or{" "}
+                <code>10,000</code>. They are converted into raw asset-unit compliance limits
+                using the current subscription settlement price of {subscriptionSettlementLabel()}.
+              </p>
+              <div class="pm-asset-market__stat-rows">
+                <div class="pm-asset-market__stat-row">
+                  <span class="pm-asset-market__stat-label">Min investment raw preview</span>
+                  <span class="pm-asset-market__stat-value">
+                    {previewMinInvestmentRuleUnits()
+                      ? `${formatNumericString(previewMinInvestmentRuleUnits())} asset units`
+                      : "Enter a valid amount"}
+                  </span>
+                </div>
+                <div class="pm-asset-market__stat-row">
+                  <span class="pm-asset-market__stat-label">Max balance raw preview</span>
+                  <span class="pm-asset-market__stat-value">
+                    {previewMaxInvestorBalanceRuleUnits()
+                      ? `${formatNumericString(previewMaxInvestorBalanceRuleUnits())} asset units`
+                      : "Enter a valid amount"}
+                  </span>
+                </div>
               </div>
               <div class="pm-market-actions">
                 <button class="pm-button pm-button--primary" type="submit" disabled={setRulesTask.pending()}>

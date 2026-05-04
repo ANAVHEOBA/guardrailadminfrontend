@@ -1,27 +1,30 @@
-import type { AssetDetailResponse, AssetResponse, PaymentTokenDisplayMeta } from "~/lib";
+import {
+  formatPaymentTokenAmountFromBaseUnits,
+  type AssetDetailResponse,
+  type AssetResponse,
+  type PaymentTokenDisplayMeta,
+} from "~/lib";
 
 import {
   formatDateTime,
   formatNumericString,
-  formatPaymentTokenValueWithRaw,
   formatUnixTimestamp,
-  truncateMiddle,
 } from "./format";
 import { StatPanel } from "./panels";
 
 interface AssetDetailStatsSectionProps {
   asset: AssetResponse;
-  subscriptionBaseUnitsLabel: string;
-  subscriptionMarketReferencePrice: string | null;
-  subscriptionSettlementPrice: string;
   detail: AssetDetailResponse | null;
-  redemptionBaseUnitsLabel: string;
+  paymentTokenMeta: PaymentTokenDisplayMeta;
   redemptionMarketReferencePrice: string | null;
   redemptionSettlementPrice: string;
-  paymentTokenMeta: PaymentTokenDisplayMeta | null;
+  subscriptionMarketReferencePrice: string | null;
+  subscriptionSettlementPrice: string;
 }
 
 export default function AssetDetailStatsSection(props: AssetDetailStatsSectionProps) {
+  const holder = () => props.detail?.holder ?? null;
+
   return (
     <section class="pm-asset-market__section">
       <div class="pm-asset-market__section-head">
@@ -34,7 +37,7 @@ export default function AssetDetailStatsSection(props: AssetDetailStatsSectionPr
       <div class="pm-asset-market__stats-grid">
         <StatPanel
           title="Pricing"
-          subtitle="Market reference, settlement amount, and stored contract values."
+          subtitle="Settlement values from the public registry."
           rows={[
             {
               label: "Subscription market price",
@@ -45,20 +48,12 @@ export default function AssetDetailStatsSection(props: AssetDetailStatsSectionPr
               value: props.subscriptionSettlementPrice,
             },
             {
-              label: "Subscription raw value",
-              value: props.subscriptionBaseUnitsLabel,
-            },
-            {
               label: "Redemption market price",
               value: props.redemptionMarketReferencePrice ?? "Not available",
             },
             {
               label: "Redemption settlement",
               value: props.redemptionSettlementPrice,
-            },
-            {
-              label: "Redemption raw value",
-              value: props.redemptionBaseUnitsLabel,
             },
           ]}
         />
@@ -86,60 +81,87 @@ export default function AssetDetailStatsSection(props: AssetDetailStatsSectionPr
         />
         <StatPanel
           title="Treasury"
-          subtitle="Treasury-backed balances for this asset."
+          subtitle="Treasury-backed balances and valuation snapshots."
           rows={[
             {
               label: "Balance",
-              value: formatPaymentTokenValueWithRaw(
+              value: formatPaymentTokenAmountFromBaseUnits(
                 props.detail?.treasury?.balance ?? null,
                 props.paymentTokenMeta,
               ),
             },
             {
               label: "Reserved yield",
-              value: formatPaymentTokenValueWithRaw(
+              value: formatPaymentTokenAmountFromBaseUnits(
                 props.detail?.treasury?.reserved_yield ?? null,
                 props.paymentTokenMeta,
               ),
             },
             {
               label: "Available liquidity",
-              value: formatPaymentTokenValueWithRaw(
+              value: formatPaymentTokenAmountFromBaseUnits(
                 props.detail?.treasury?.available_liquidity ?? null,
                 props.paymentTokenMeta,
               ),
             },
             {
-              label: "Updated",
-              value: formatDateTime(props.detail?.treasury?.updated_at ?? props.asset.updated_at),
+              label: "NAV per token",
+              value: formatPaymentTokenAmountFromBaseUnits(
+                props.detail?.valuation?.nav_per_token ?? null,
+                props.paymentTokenMeta,
+              ),
             },
           ]}
         />
         <StatPanel
-          title="Valuation"
-          subtitle="Latest valuation snapshot when available."
-          rows={[
-            {
-              label: "Asset value",
-              value: formatNumericString(props.detail?.valuation?.asset_value ?? "0"),
-            },
-            {
-              label: "NAV per token",
-              value: formatNumericString(props.detail?.valuation?.nav_per_token ?? "0"),
-            },
-            {
-              label: "On-chain updated",
-              value: formatUnixTimestamp(props.detail?.valuation?.onchain_updated_at),
-            },
-            {
-              label: "Reference ID",
-              value: truncateMiddle(
-                props.detail?.valuation?.reference_id ??
-                  "0x0000000000000000000000000000000000000000000000000000000000000000",
-              ),
-              mono: true,
-            },
-          ]}
+          title="Account"
+          subtitle={
+            holder()
+              ? "Wallet-specific balances from the user endpoint."
+              : "Sign in with a linked wallet to view your balances."
+          }
+          rows={
+            holder()
+              ? [
+                  {
+                    label: "Asset balance",
+                    value: formatNumericString(holder()?.balance ?? null),
+                  },
+                  {
+                    label: "Unlocked balance",
+                    value: formatNumericString(holder()?.unlocked_balance ?? null),
+                  },
+                  {
+                    label: "Pending redemption",
+                    value: formatNumericString(holder()?.pending_redemption ?? null),
+                  },
+                  {
+                    label: "Wallet cash",
+                    value: formatPaymentTokenAmountFromBaseUnits(
+                      holder()?.payment_token_balance ?? null,
+                      props.paymentTokenMeta,
+                    ),
+                  },
+                ]
+              : [
+                  {
+                    label: "Status",
+                    value: "Wallet not connected",
+                  },
+                  {
+                    label: "Updated",
+                    value: formatDateTime(props.asset.updated_at),
+                  },
+                  {
+                    label: "Valuation timestamp",
+                    value: formatUnixTimestamp(props.detail?.valuation?.onchain_updated_at),
+                  },
+                  {
+                    label: "Asset status",
+                    value: props.asset.asset_state_label,
+                  },
+                ]
+          }
         />
       </div>
     </section>

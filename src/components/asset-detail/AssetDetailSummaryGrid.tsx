@@ -1,11 +1,12 @@
-import type { AssetDetailResponse, AssetResponse } from "~/lib";
+import type { AssetDetailResponse, AssetResponse, PaymentTokenDisplayMeta } from "~/lib";
 
-import { formatDateTime, formatNumericString } from "./format";
+import { formatDateTime, formatNumericString, formatPaymentTokenValue, formatPaymentTokenValueWithRaw } from "./format";
 import { SummaryCard } from "./panels";
 
 interface AssetDetailSummaryGridProps {
   asset: AssetResponse;
   detail: AssetDetailResponse | null;
+  paymentTokenMeta: PaymentTokenDisplayMeta | null;
 }
 
 export default function AssetDetailSummaryGrid(props: AssetDetailSummaryGridProps) {
@@ -23,8 +24,14 @@ export default function AssetDetailSummaryGrid(props: AssetDetailSummaryGridProp
       />
       <SummaryCard
         label="Treasury liquidity"
-        value={formatNumericString(props.detail?.treasury?.available_liquidity ?? "0")}
-        meta={`Balance ${formatNumericString(props.detail?.treasury?.balance ?? "0")}`}
+        value={formatPaymentTokenValue(
+          props.detail?.treasury?.available_liquidity ?? null,
+          props.paymentTokenMeta,
+        )}
+        meta={`Balance ${formatPaymentTokenValueWithRaw(
+          props.detail?.treasury?.balance ?? null,
+          props.paymentTokenMeta,
+        )}`}
       />
       <SummaryCard
         label="Valuation NAV"

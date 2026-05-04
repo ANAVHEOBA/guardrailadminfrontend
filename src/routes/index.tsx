@@ -234,7 +234,7 @@ export default function Home() {
 
   onMount(() => {
     // Try to load from cache first for instant display
-    const warmFeed = cachedFeed ?? readFeedFromStorage();
+    const warmFeed = readFeedFromStorage() ?? cachedFeed;
 
     if (warmFeed) {
       applyFeed(warmFeed);
