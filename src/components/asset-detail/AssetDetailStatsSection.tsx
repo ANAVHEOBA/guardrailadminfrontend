@@ -1,6 +1,7 @@
 import type { AssetDetailResponse, AssetResponse, PaymentTokenDisplayMeta } from "~/lib";
 
 import {
+  formatAssetTokenValue,
   formatDateTime,
   formatNumericString,
   formatPaymentTokenValueWithRaw,
@@ -68,11 +69,11 @@ export default function AssetDetailStatsSection(props: AssetDetailStatsSectionPr
           rows={[
             {
               label: "Total supply",
-              value: formatNumericString(props.asset.total_supply),
+              value: formatAssetTokenValue(props.asset.total_supply),
             },
             {
               label: "Max supply",
-              value: formatNumericString(props.asset.max_supply),
+              value: formatAssetTokenValue(props.asset.max_supply),
             },
             {
               label: "Holders",

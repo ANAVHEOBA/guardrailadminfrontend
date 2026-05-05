@@ -12,5 +12,10 @@ export default defineConfig({
       ),
     },
   },
-  plugins: [solidStart(), nitro()],
+  plugins: [
+    solidStart(),
+    nitro({
+      preset: process.env.VERCEL ? "vercel" : "node-server",
+    }),
+  ],
 });

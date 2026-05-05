@@ -9,6 +9,8 @@ import {
 
 import type { AssetDetailLookupMode, PriceMode } from "./types";
 
+const ASSET_TOKEN_DECIMALS = 18;
+
 export function formatDateTime(value: string | null | undefined): string {
   if (!value) {
     return "Not available";
@@ -136,6 +138,31 @@ export function formatNumericString(value: string | null | undefined): string {
   }
 
   return value;
+}
+
+export function formatAssetTokenValue(value: string | null | undefined): string {
+  if (!value) {
+    return "Not available";
+  }
+
+  const normalized = value.trim();
+
+  if (!/^\d+$/.test(normalized)) {
+    return value;
+  }
+
+  const digits = normalized.replace(/^0+/, "") || "0";
+
+  if (digits.length <= ASSET_TOKEN_DECIMALS) {
+    const fractional = digits.padStart(ASSET_TOKEN_DECIMALS, "0").replace(/0+$/, "");
+    return fractional.length > 0 ? `0.${fractional}` : "0";
+  }
+
+  const splitIndex = digits.length - ASSET_TOKEN_DECIMALS;
+  const whole = digits.slice(0, splitIndex).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  const fractional = digits.slice(splitIndex).replace(/0+$/, "");
+
+  return fractional.length > 0 ? `${whole}.${fractional}` : whole;
 }
 
 export function formatCompactNumericString(value: string | null | undefined): string {

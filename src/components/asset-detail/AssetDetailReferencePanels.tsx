@@ -20,9 +20,13 @@ interface AssetDetailReferencePanelsProps {
 export default function AssetDetailReferencePanels(props: AssetDetailReferencePanelsProps) {
   const auth = useAdminAuth();
   const [isToggleModalOpen, setToggleModalOpen] = createSignal(false);
+  const [isArchiveModalOpen, setArchiveModalOpen] = createSignal(false);
   const [togglePending, setTogglePending] = createSignal(false);
   const [toggleError, setToggleError] = createSignal<string | null>(null);
   const [toggleStatus, setToggleStatus] = createSignal<string | null>(null);
+  const [archivePending, setArchivePending] = createSignal(false);
+  const [archiveError, setArchiveError] = createSignal<string | null>(null);
+  const [archiveStatus, setArchiveStatus] = createSignal<string | null>(null);
   const [selfServiceEnabled, setSelfServiceEnabled] = createSignal(
     props.asset.self_service_purchase_enabled,
   );
@@ -46,6 +50,19 @@ export default function AssetDetailReferencePanels(props: AssetDetailReferencePa
       return;
     }
     setToggleModalOpen(false);
+  };
+
+  const openArchiveModal = () => {
+    setArchiveError(null);
+    setArchiveStatus(null);
+    setArchiveModalOpen(true);
+  };
+
+  const closeArchiveModal = () => {
+    if (archivePending()) {
+      return;
+    }
+    setArchiveModalOpen(false);
   };
 
   const runSelfServiceToggle = async () => {
@@ -85,6 +102,38 @@ export default function AssetDetailReferencePanels(props: AssetDetailReferencePa
       setToggleError(getErrorMessage(error));
     } finally {
       setTogglePending(false);
+    }
+  };
+
+  const runArchive = async () => {
+    const token = adminToken();
+
+    if (!token) {
+      setArchiveError("Connect an admin wallet first.");
+      return;
+    }
+
+    setArchiveError(null);
+    setArchiveStatus(null);
+    setArchivePending(true);
+
+    try {
+      console.info("[asset-controls] archive:start", {
+        assetAddress: props.asset.asset_address,
+      });
+
+      const response = await assetClient.archiveAsset(token, props.asset.asset_address);
+      console.info("[asset-controls] archive:success", response);
+      props.onAssetUpdated?.(response.asset);
+      setSelfServiceEnabled(response.asset.self_service_purchase_enabled);
+      setArchiveStatus(
+        "Archived. Asset is paused, self-service purchase is disabled, and catalog visibility is turned off.",
+      );
+    } catch (error) {
+      console.error("[asset-controls] archive:error", error);
+      setArchiveError(getErrorMessage(error));
+    } finally {
+      setArchivePending(false);
     }
   };
 
@@ -189,6 +238,9 @@ export default function AssetDetailReferencePanels(props: AssetDetailReferencePa
             <button class="pm-button pm-button--ghost" type="button" onClick={openToggleModal}>
               {nextSelfServiceState() ? "Enable self-service purchase" : "Disable self-service purchase"}
             </button>
+            <button class="pm-button pm-button--ghost" type="button" onClick={openArchiveModal}>
+              Archive bad asset
+            </button>
           </div>
         </section>
       </div>
@@ -231,6 +283,46 @@ export default function AssetDetailReferencePanels(props: AssetDetailReferencePa
                   : nextSelfServiceState()
                     ? "Enable self-service purchase"
                     : "Disable self-service purchase"}
+              </button>
+            </div>
+          </Show>
+        </div>
+      </AdminModal>
+
+      <AdminModal
+        open={isArchiveModalOpen()}
+        onClose={closeArchiveModal}
+        eyebrow="Asset controls"
+        title="Archive bad asset"
+        subtitle={`Pause ${props.asset.name}, disable self-service purchase, and remove it from the public catalog.`}
+      >
+        <div class="pm-asset-market__modal-stack">
+          <Show
+            when={isAdminConnected()}
+            fallback={
+              <div class="pm-asset-market__auth-gate">
+                <p>Admin auth is required before you can archive this asset.</p>
+                <button class="pm-button pm-button--primary" type="button" onClick={auth.openAuthDialog}>
+                  Authenticate admin wallet
+                </button>
+              </div>
+            }
+          >
+            <p class="pm-market-feedback">
+              This keeps the asset on chain but retires it from active use and public discovery.
+            </p>
+            <Show when={archiveError()}>
+              {message => <p class="pm-market-feedback pm-market-feedback--error">{message()}</p>}
+            </Show>
+            <Show when={archiveStatus()}>
+              {message => <p class="pm-market-feedback">{message()}</p>}
+            </Show>
+            <div class="pm-market-actions">
+              <button class="pm-button pm-button--ghost" type="button" onClick={closeArchiveModal} disabled={archivePending()}>
+                Cancel
+              </button>
+              <button class="pm-button pm-button--primary" type="button" onClick={() => void runArchive()} disabled={archivePending()}>
+                {archivePending() ? "Archiving..." : "Archive bad asset"}
               </button>
             </div>
           </Show>

@@ -282,6 +282,12 @@ export interface AssetWriteResponse {
   asset: AssetResponse;
 }
 
+export interface AssetArchiveWriteResponse {
+  state_tx_hash: string | null;
+  self_service_purchase_tx_hash: string | null;
+  asset: AssetResponse;
+}
+
 export interface AssetCatalogWriteResponse {
   asset: AssetResponse;
 }

@@ -18,6 +18,7 @@ import { getErrorMessage } from "~/lib/api";
 import { useAsyncTask } from "~/lib/hooks/useAsyncTask";
 
 import {
+  formatAssetTokenValue,
   formatBooleanValue,
   formatDateTime,
   formatNumericString,
@@ -70,6 +71,8 @@ interface RulesDraftState {
   min_investment: string;
   max_investor_balance: string;
 }
+
+const ASSET_TOKEN_BASE_UNITS = BigInt("1000000000000000000");
 
 function normalizeIntegerString(value: string | null | undefined): string | null {
   if (!value) {
@@ -155,7 +158,7 @@ function convertSettlementDisplayToRuleUnits(
     normalizeIntegerString(pricePerToken) ?? "0",
   );
 
-  return ceilDivide(paymentTokenBaseUnits, pricePerTokenUnits).toString();
+  return ceilDivide(paymentTokenBaseUnits * ASSET_TOKEN_BASE_UNITS, pricePerTokenUnits).toString();
 }
 
 function convertRuleUnitsToSettlementBaseUnits(
@@ -169,7 +172,9 @@ function convertRuleUnitsToSettlementBaseUnits(
     return null;
   }
 
-  return (BigInt(normalizedValue) * BigInt(normalizedPrice)).toString();
+  return (
+    (BigInt(normalizedValue) * BigInt(normalizedPrice)) / ASSET_TOKEN_BASE_UNITS
+  ).toString();
 }
 
 function formatRuleUnitsAsSettlement(
@@ -198,7 +203,7 @@ function formatRuleValueForDisplay(
     return settlementLabel;
   }
 
-  return `${settlementLabel} · ${formatNumericString(rawUnits)} asset units`;
+  return `${settlementLabel} · ${formatAssetTokenValue(rawUnits)} tokens`;
 }
 
 function buildRulesDraft(
@@ -1052,23 +1057,23 @@ export default function AssetDetailComplianceSection(
               </div>
               <p class="pm-asset-market__panel-subcopy">
                 Enter display {paymentTokenMeta().symbol} values like <code>1</code> or{" "}
-                <code>10,000</code>. They are converted into raw asset-unit compliance limits
+                <code>10,000</code>. They are converted into 18-decimal asset-token limits
                 using the current subscription settlement price of {subscriptionSettlementLabel()}.
               </p>
               <div class="pm-asset-market__stat-rows">
                 <div class="pm-asset-market__stat-row">
-                  <span class="pm-asset-market__stat-label">Min investment raw preview</span>
+                  <span class="pm-asset-market__stat-label">Min investment preview</span>
                   <span class="pm-asset-market__stat-value">
                     {previewMinInvestmentRuleUnits()
-                      ? `${formatNumericString(previewMinInvestmentRuleUnits())} asset units`
+                      ? `${formatAssetTokenValue(previewMinInvestmentRuleUnits())} tokens · ${formatNumericString(previewMinInvestmentRuleUnits())} base units`
                       : "Enter a valid amount"}
                   </span>
                 </div>
                 <div class="pm-asset-market__stat-row">
-                  <span class="pm-asset-market__stat-label">Max balance raw preview</span>
+                  <span class="pm-asset-market__stat-label">Max balance preview</span>
                   <span class="pm-asset-market__stat-value">
                     {previewMaxInvestorBalanceRuleUnits()
-                      ? `${formatNumericString(previewMaxInvestorBalanceRuleUnits())} asset units`
+                      ? `${formatAssetTokenValue(previewMaxInvestorBalanceRuleUnits())} tokens · ${formatNumericString(previewMaxInvestorBalanceRuleUnits())} base units`
                       : "Enter a valid amount"}
                   </span>
                 </div>

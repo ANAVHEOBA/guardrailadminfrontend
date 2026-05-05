@@ -1,6 +1,12 @@
 import type { AssetDetailResponse, AssetResponse, PaymentTokenDisplayMeta } from "~/lib";
 
-import { formatDateTime, formatNumericString, formatPaymentTokenValue, formatPaymentTokenValueWithRaw } from "./format";
+import {
+  formatAssetTokenValue,
+  formatDateTime,
+  formatNumericString,
+  formatPaymentTokenValue,
+  formatPaymentTokenValueWithRaw,
+} from "./format";
 import { SummaryCard } from "./panels";
 
 interface AssetDetailSummaryGridProps {
@@ -14,8 +20,8 @@ export default function AssetDetailSummaryGrid(props: AssetDetailSummaryGridProp
     <div class="pm-asset-market__summary-grid">
       <SummaryCard
         label="Total supply"
-        value={formatNumericString(props.asset.total_supply)}
-        meta={`Max supply ${formatNumericString(props.asset.max_supply)}`}
+        value={formatAssetTokenValue(props.asset.total_supply)}
+        meta={`Max supply ${formatAssetTokenValue(props.asset.max_supply)}`}
       />
       <SummaryCard
         label="Investor footprint"

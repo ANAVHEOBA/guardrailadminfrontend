@@ -63,6 +63,7 @@ const EMPTY_PRICING_DRAFT: PricingDraft = {
 
 const MAX_ADMIN_IMAGE_SIZE_BYTES = 10 * 1024 * 1024;
 const FALLBACK_MARKET_CURRENCIES = ["ngn", "usd", "eur", "gbp"];
+const ASSET_TOKEN_DECIMALS = 18;
 const ASSET_TYPE_CURRENCY_MAP: Record<string, string> = {
   AE: "aed",
   AU: "aud",
@@ -85,6 +86,31 @@ const ASSET_TYPE_CURRENCY_MAP: Record<string, string> = {
   US: "usd",
   ZA: "zar",
 };
+
+function parseAssetTokenAmountInput(raw: string): string {
+  const trimmed = raw.trim();
+
+  if (trimmed.length === 0) {
+    throw new Error("Max supply is required.");
+  }
+
+  const normalized = trimmed.startsWith(".") ? `0${trimmed}` : trimmed;
+
+  if (!/^\d+(?:\.\d{0,18})?$/.test(normalized)) {
+    throw new Error("Max supply must be a valid asset amount with up to 18 decimals.");
+  }
+
+  const [wholeRaw, fractionalRaw = ""] = normalized.split(".");
+  const whole = wholeRaw.replace(/^0+(?=\d)/, "") || "0";
+  const fractional = fractionalRaw.padEnd(ASSET_TOKEN_DECIMALS, "0");
+  const baseUnits = `${whole}${fractional}`.replace(/^0+/, "") || "0";
+
+  if (baseUnits === "0") {
+    throw new Error("Max supply must be greater than zero.");
+  }
+
+  return baseUnits;
+}
 
 function formatTimestamp(value: string) {
   const parsed = new Date(value);
@@ -634,6 +660,7 @@ export default function AdminAssetManager() {
       void refreshAssetTypes();
     } catch (error) {
       setRegisterError(getErrorMessage(error));
+      void refreshAssetTypes();
     }
   }
 
@@ -706,7 +733,9 @@ export default function AdminAssetManager() {
         asset_type_id: readRequiredText(formData, "asset_type_id", "Asset type ID"),
         name: readRequiredText(formData, "name", "Name"),
         symbol: readRequiredText(formData, "symbol", "Symbol"),
-        max_supply: readRequiredText(formData, "max_supply", "Max supply"),
+        max_supply: parseAssetTokenAmountInput(
+          readRequiredText(formData, "max_supply", "Max supply"),
+        ),
         subscription_price: subscriptionPrice,
         redemption_price: redemptionPrice,
         self_service_purchase_enabled: Boolean(formData.get("self_service_purchase_enabled")),
@@ -1410,6 +1439,10 @@ export default function AdminAssetManager() {
                 <label class="pm-field">
                   <span class="pm-field__label">Max supply</span>
                   <input class="pm-field__input" name="max_supply" type="text" required />
+                  <span class="pm-field__hint">
+                    Input is display asset units. It is converted to 18-decimal base units on
+                    submit.
+                  </span>
                 </label>
 
                 <label class="pm-field">

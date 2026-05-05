@@ -6,6 +6,7 @@ import {
   withBearerToken,
 } from "../api.ts";
 import type {
+  AssetArchiveWriteResponse,
   AdminBurnAssetRequest,
   AdminControllerTransferRequest,
   AdminCreateAssetRequest,
@@ -103,6 +104,7 @@ export interface AssetClient {
     assetAddress: string,
     request: AdminBurnAssetRequest,
   ): Promise<AssetWriteResponse>;
+  archiveAsset(token: string, assetAddress: string): Promise<AssetArchiveWriteResponse>;
   setAssetState(
     token: string,
     assetAddress: string,
@@ -388,6 +390,17 @@ export function createAssetClient(options: AssetClientOptions = {}): AssetClient
         headers: withBearerToken(token),
         json: request,
       });
+    },
+
+    archiveAsset(token, assetAddress) {
+      return requestJson<AssetArchiveWriteResponse>(
+        baseUrl,
+        `${adminAssetPath(assetAddress)}/archive`,
+        {
+          method: "POST",
+          headers: withBearerToken(token),
+        },
+      );
     },
 
     setAssetState(token, assetAddress, request) {
