@@ -122,11 +122,17 @@ export default function AssetDetailStatsSection(props: AssetDetailStatsSectionPr
           rows={[
             {
               label: "Asset value",
-              value: formatNumericString(props.detail?.valuation?.asset_value ?? "0"),
+              value: formatPaymentTokenValueWithRaw(
+                props.detail?.valuation?.asset_value ?? null,
+                props.paymentTokenMeta,
+              ),
             },
             {
               label: "NAV per token",
-              value: formatNumericString(props.detail?.valuation?.nav_per_token ?? "0"),
+              value: formatPaymentTokenValueWithRaw(
+                props.detail?.valuation?.nav_per_token ?? null,
+                props.paymentTokenMeta,
+              ),
             },
             {
               label: "On-chain updated",

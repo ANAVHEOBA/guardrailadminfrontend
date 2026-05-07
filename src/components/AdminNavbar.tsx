@@ -113,18 +113,22 @@ function formatUsdcBaseUnits(rawAmount: string): string {
   return fractional.length > 0 ? `${whole}.${fractional}` : whole;
 }
 
-function parseUsdcAmountInput(value: string): string {
+function normalizeUsdcAmountInput(value: string): string {
   const normalized = value.trim();
+
   if (!/^\d+(\.\d{1,6})?$/.test(normalized)) {
     throw new Error("Enter a valid USDC amount with up to 6 decimals.");
   }
 
   const [wholeRaw, fractionalRaw = ""] = normalized.split(".");
-  const whole = wholeRaw.replace(/^0+(?=\d)/, "");
-  const fractional = fractionalRaw.padEnd(6, "0");
-  const baseUnits = `${whole}${fractional}`.replace(/^0+/, "");
+  const whole = wholeRaw.replace(/^0+(?=\d)/, "") || "0";
+  const fractional = fractionalRaw.replace(/0+$/, "");
 
-  return baseUnits.length > 0 ? baseUnits : "0";
+  if (whole === "0" && fractional.length === 0) {
+    throw new Error("Amount must be greater than zero.");
+  }
+
+  return fractional.length > 0 ? `${whole}.${fractional}` : whole;
 }
 
 interface AdminNavbarProps {
@@ -255,8 +259,10 @@ export default function AdminNavbar(props: AdminNavbarProps) {
       return;
     }
 
+    let amount: string;
+
     try {
-      parseUsdcAmountInput(faucetAmountInput());
+      amount = normalizeUsdcAmountInput(faucetAmountInput());
     } catch (error) {
       setFaucetError(error instanceof Error ? error.message : "Invalid amount.");
       return;
@@ -264,7 +270,7 @@ export default function AdminNavbar(props: AdminNavbarProps) {
 
     setFaucetPending(true);
     try {
-      const response = await faucetClient.requestUsdc(token);
+      const response = await faucetClient.requestUsdc(token, amount);
       setFaucetStatus(
         `Requested ${formatUsdcBaseUnits(response.amount)} USDC. Tx: ${response.tx_hash.slice(0, 10)}...`,
       );

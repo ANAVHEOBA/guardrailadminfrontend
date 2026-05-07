@@ -21,6 +21,8 @@ import type {
   AdminSetAssetSelfServicePurchaseRequest,
   AdminSetAssetStateRequest,
   AdminSetAssetTreasuryRequest,
+  AdminSetFactoryComplianceRegistryRequest,
+  AdminSetFactoryTreasuryRequest,
   AssetCatalogWriteResponse,
   AssetCheckTransferRequest,
   AssetClientOptions,
@@ -47,6 +49,7 @@ import type {
   GaslessPurchaseAssetRequest,
   GaslessRedeemAssetRequest,
   ListAssetsQuery,
+  PendingRedemptionsResponse,
 } from "./types.ts";
 
 export interface AssetClient {
@@ -93,6 +96,14 @@ export interface AssetClient {
   unregisterAssetType(token: string, assetTypeId: string): Promise<AssetTypeWriteResponse>;
   pauseFactory(token: string): Promise<AssetFactoryWriteResponse>;
   unpauseFactory(token: string): Promise<AssetFactoryWriteResponse>;
+  setFactoryComplianceRegistry(
+    token: string,
+    request: AdminSetFactoryComplianceRegistryRequest,
+  ): Promise<AssetFactoryWriteResponse>;
+  setFactoryTreasury(
+    token: string,
+    request: AdminSetFactoryTreasuryRequest,
+  ): Promise<AssetFactoryWriteResponse>;
   createAsset(token: string, request: AdminCreateAssetRequest): Promise<AssetWriteResponse>;
   issueAsset(
     token: string,
@@ -161,6 +172,10 @@ export interface AssetClient {
     assetAddress: string,
     request: AdminProcessRedemptionRequest,
   ): Promise<AssetWriteResponse>;
+  fetchPendingRedemptions(
+    token: string,
+    assetAddress: string,
+  ): Promise<PendingRedemptionsResponse>;
   approvePaymentToken(
     token: string,
     assetAddress: string,
@@ -368,6 +383,26 @@ export function createAssetClient(options: AssetClientOptions = {}): AssetClient
       });
     },
 
+    setFactoryComplianceRegistry(token, request) {
+      return requestJson<AssetFactoryWriteResponse>(
+        baseUrl,
+        "/admin/assets/factory/compliance-registry",
+        {
+          method: "PUT",
+          headers: withBearerToken(token),
+          json: request,
+        },
+      );
+    },
+
+    setFactoryTreasury(token, request) {
+      return requestJson<AssetFactoryWriteResponse>(baseUrl, "/admin/assets/factory/treasury", {
+        method: "PUT",
+        headers: withBearerToken(token),
+        json: request,
+      });
+    },
+
     createAsset(token, request) {
       return requestJson<AssetWriteResponse>(baseUrl, "/admin/assets", {
         method: "POST",
@@ -526,6 +561,16 @@ export function createAssetClient(options: AssetClientOptions = {}): AssetClient
           method: "POST",
           headers: withBearerToken(token),
           json: request,
+        },
+      );
+    },
+
+    fetchPendingRedemptions(token, assetAddress) {
+      return requestJson<PendingRedemptionsResponse>(
+        baseUrl,
+        `${adminAssetPath(assetAddress)}/redemptions/pending`,
+        {
+          headers: withBearerToken(token),
         },
       );
     },

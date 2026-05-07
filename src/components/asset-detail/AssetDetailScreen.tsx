@@ -600,6 +600,7 @@ export default function AssetDetailScreen(props: AssetDetailScreenProps) {
 
                       <AssetDetailOracleSection
                         asset={registryAsset}
+                        paymentTokenMeta={paymentTokenMeta()}
                         valuation={detail()?.valuation ?? null}
                         onPricingUpdated={applyOraclePricingUpdate}
                         onValuationUpdated={applyValuationUpdate}

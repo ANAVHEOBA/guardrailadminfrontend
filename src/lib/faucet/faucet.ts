@@ -7,7 +7,7 @@ import type {
 
 export interface FaucetClient {
   fetchUsdcBalance(address: string): Promise<FaucetUsdcBalanceResponse>;
-  requestUsdc(token: string): Promise<FaucetUsdcResponse>;
+  requestUsdc(token: string, amount: string): Promise<FaucetUsdcResponse>;
 }
 
 export function createFaucetClient(options: FaucetClientOptions = {}): FaucetClient {
@@ -20,10 +20,11 @@ export function createFaucetClient(options: FaucetClientOptions = {}): FaucetCli
       });
     },
 
-    requestUsdc(token) {
+    requestUsdc(token, amount) {
       return requestJson<FaucetUsdcResponse>(baseUrl, "/faucet/usdc", {
         method: "POST",
         headers: withBearerToken(token),
+        json: { amount },
       });
     },
   };

@@ -18,7 +18,9 @@ import { useAsyncTask } from "~/lib/hooks/useAsyncTask";
 import {
   formatDateTime,
   formatNumericString,
+  formatPaymentTokenBaseUnitsForInput,
   formatPaymentTokenValueWithRaw,
+  parseDisplayPaymentTokenAmountToBaseUnits,
   truncateMiddle,
 } from "./format";
 
@@ -68,41 +70,6 @@ function requireTextValue(value: string, label: string) {
 
 function formatPauseState(paused: boolean) {
   return paused ? "Paused" : "Active";
-}
-
-function parseUsdcAmountToBaseUnits(value: string): string {
-  const normalized = value
-    .trim()
-    .toLowerCase()
-    .replace(/\s*usdc\s*$/, "")
-    .replace(/,/g, "")
-    .trim();
-
-  if (!/^\d+(\.\d{1,6})?$/.test(normalized)) {
-    throw new Error("Amount must be a valid USDC value with up to 6 decimals.");
-  }
-
-  const [wholeRaw, fractionalRaw = ""] = normalized.split(".");
-  const whole = wholeRaw.replace(/^0+(?=\d)/, "");
-  const fractional = fractionalRaw.padEnd(6, "0");
-  const baseUnits = `${whole}${fractional}`.replace(/^0+/, "");
-
-  return baseUnits.length > 0 ? baseUnits : "0";
-}
-
-function formatUsdcBaseUnits(value: string): string {
-  const normalized = value.trim().replace(/^0+/, "") || "0";
-  const decimals = 6;
-
-  if (normalized.length <= decimals) {
-    const fractional = normalized.padStart(decimals, "0").replace(/0+$/, "");
-    return fractional ? `0.${fractional}` : "0";
-  }
-
-  const splitIndex = normalized.length - decimals;
-  const whole = normalized.slice(0, splitIndex);
-  const fractional = normalized.slice(splitIndex).replace(/0+$/, "");
-  return fractional ? `${whole}.${fractional}` : whole;
 }
 
 export default function AssetDetailTreasurySection(
@@ -319,8 +286,9 @@ export default function AssetDetailTreasurySection(
     setApproveError(null);
 
     try {
-      const baseUnits = parseUsdcAmountToBaseUnits(
+      const baseUnits = parseDisplayPaymentTokenAmountToBaseUnits(
         requireTextValue(approveAmount(), "Amount"),
+        paymentTokenMeta(),
       );
       const response = await approveTask.run(
         token,
@@ -344,8 +312,9 @@ export default function AssetDetailTreasurySection(
     setDepositError(null);
 
     try {
-      const baseUnits = parseUsdcAmountToBaseUnits(
+      const baseUnits = parseDisplayPaymentTokenAmountToBaseUnits(
         requireTextValue(depositAmount(), "Amount"),
+        paymentTokenMeta(),
       );
       const response = await depositTask.run(
         token,
@@ -370,9 +339,13 @@ export default function AssetDetailTreasurySection(
 
     try {
       const draft = releaseDraft();
+      const baseUnits = parseDisplayPaymentTokenAmountToBaseUnits(
+        requireTextValue(draft.amount, "Amount"),
+        paymentTokenMeta(),
+      );
       const response = await releaseTask.run(
         token,
-        requireTextValue(draft.amount, "Amount"),
+        baseUnits,
         requireTextValue(draft.recipient_wallet, "Recipient wallet"),
         requireTextValue(draft.reference_id, "Reference ID"),
       );
@@ -395,9 +368,13 @@ export default function AssetDetailTreasurySection(
 
     try {
       const draft = depositYieldDraft();
+      const baseUnits = parseDisplayPaymentTokenAmountToBaseUnits(
+        requireTextValue(draft.amount, "Amount"),
+        paymentTokenMeta(),
+      );
       const response = await depositYieldTask.run(
         token,
-        requireTextValue(draft.amount, "Amount"),
+        baseUnits,
         draft.data.trim() || null,
       );
       syncTreasuryWrite(response);
@@ -687,17 +664,23 @@ export default function AssetDetailTreasurySection(
                     </span>
                   </div>
                   <div class="pm-asset-market__stat-row">
-                    <span class="pm-asset-market__stat-label">Tracked balance</span>
-                    <span class="pm-asset-market__stat-value">
-                      {formatNumericString(status().total_tracked_balance)}
-                    </span>
-                  </div>
-                  <div class="pm-asset-market__stat-row">
-                    <span class="pm-asset-market__stat-label">Reserved yield</span>
-                    <span class="pm-asset-market__stat-value">
-                      {formatNumericString(status().total_reserved_yield)}
-                    </span>
-                  </div>
+                      <span class="pm-asset-market__stat-label">Tracked balance</span>
+                      <span class="pm-asset-market__stat-value">
+                        {formatPaymentTokenValueWithRaw(
+                          status().total_tracked_balance,
+                          paymentTokenMeta(),
+                        )}
+                      </span>
+                    </div>
+                    <div class="pm-asset-market__stat-row">
+                      <span class="pm-asset-market__stat-label">Reserved yield</span>
+                      <span class="pm-asset-market__stat-value">
+                        {formatPaymentTokenValueWithRaw(
+                          status().total_reserved_yield,
+                          paymentTokenMeta(),
+                        )}
+                      </span>
+                    </div>
                   <div class="pm-asset-market__stat-row">
                     <span class="pm-asset-market__stat-label">Updated</span>
                     <span class="pm-asset-market__stat-value">
@@ -798,7 +781,7 @@ export default function AssetDetailTreasurySection(
             <form class="pm-market-form" onSubmit={handleApproveSubmit}>
               <div class="pm-market-fields">
                 <label class="pm-field pm-field--full">
-                  <span class="pm-field__label">Amount (USDC)</span>
+                  <span class="pm-field__label">Amount ({paymentTokenMeta().symbol})</span>
                   <input
                     class="pm-field__input"
                     type="text"
@@ -809,7 +792,11 @@ export default function AssetDetailTreasurySection(
                   />
                 </label>
               </div>
-              <p class="pm-market-feedback">Input is display USDC. Formats like `105`, `10,000`, or `10,000 usdc` are accepted and converted to 6-decimal base units on submit.</p>
+              <p class="pm-market-feedback">
+                Input is display {paymentTokenMeta().symbol}. Formats like `105`, `10,000`, or
+                `10,000 {paymentTokenMeta().symbol.toLowerCase()}` are accepted and converted to
+                {` ${paymentTokenMeta().decimals}`}-decimal base units on submit.
+              </p>
               <div class="pm-market-actions">
                 <button class="pm-button pm-button--primary" type="submit" disabled={approveTask.pending()}>
                   {approveTask.pending() ? "Submitting..." : "Approve payment token"}
@@ -840,7 +827,11 @@ export default function AssetDetailTreasurySection(
                     <div class="pm-asset-market__fact">
                       <span class="pm-asset-market__fact-label">Approved settlement</span>
                       <span class="pm-asset-market__fact-value">
-                        {formatNumericString(formatUsdcBaseUnits(approval().approved_amount))} USDC
+                        {formatPaymentTokenBaseUnitsForInput(
+                          approval().approved_amount,
+                          paymentTokenMeta(),
+                        )}{" "}
+                        {paymentTokenMeta().symbol}
                       </span>
                     </div>
                   </div>
@@ -866,7 +857,7 @@ export default function AssetDetailTreasurySection(
             <form class="pm-market-form" onSubmit={handleDepositSubmit}>
               <div class="pm-market-fields">
                 <label class="pm-field pm-field--full">
-                  <span class="pm-field__label">Amount (USDC)</span>
+                  <span class="pm-field__label">Amount ({paymentTokenMeta().symbol})</span>
                   <input
                     class="pm-field__input"
                     type="text"
@@ -877,7 +868,11 @@ export default function AssetDetailTreasurySection(
                   />
                 </label>
               </div>
-              <p class="pm-market-feedback">Input is display USDC. Formats like `105`, `10,000`, or `10,000 usdc` are accepted and converted to 6-decimal base units on submit.</p>
+              <p class="pm-market-feedback">
+                Input is display {paymentTokenMeta().symbol}. Formats like `105`, `10,000`, or
+                `10,000 {paymentTokenMeta().symbol.toLowerCase()}` are accepted and converted to
+                {` ${paymentTokenMeta().decimals}`}-decimal base units on submit.
+              </p>
               <div class="pm-market-actions">
                 <button class="pm-button pm-button--primary" type="submit" disabled={depositTask.pending()}>
                   {depositTask.pending() ? "Submitting..." : "Deposit liquidity"}
@@ -902,10 +897,11 @@ export default function AssetDetailTreasurySection(
                     <div class="pm-asset-market__fact">
                       <span class="pm-asset-market__fact-label">Available liquidity</span>
                       <span class="pm-asset-market__fact-value">
-                        {formatNumericString(
-                          formatUsdcBaseUnits(response().asset.available_liquidity),
+                        {formatPaymentTokenBaseUnitsForInput(
+                          response().asset.available_liquidity,
+                          paymentTokenMeta(),
                         )}{" "}
-                        USDC
+                        {paymentTokenMeta().symbol}
                       </span>
                     </div>
                     <div class="pm-asset-market__fact">
@@ -938,10 +934,12 @@ export default function AssetDetailTreasurySection(
             <form class="pm-market-form" onSubmit={handleReleaseCapitalSubmit}>
               <div class="pm-market-fields">
                 <label class="pm-field">
-                  <span class="pm-field__label">Amount</span>
+                  <span class="pm-field__label">Amount ({paymentTokenMeta().symbol})</span>
                   <input
                     class="pm-field__input"
                     type="text"
+                    inputMode="decimal"
+                    placeholder="90"
                     value={releaseDraft().amount}
                     onInput={event =>
                       setReleaseDraft(current => ({
@@ -980,6 +978,11 @@ export default function AssetDetailTreasurySection(
                   />
                 </label>
               </div>
+              <p class="pm-market-feedback">
+                Input is display {paymentTokenMeta().symbol}. The treasury contract releases the
+                payment token, so this amount is converted to {` ${paymentTokenMeta().decimals}`}
+                -decimal base units on submit.
+              </p>
               <div class="pm-market-actions">
                 <button class="pm-button pm-button--primary" type="submit" disabled={releaseTask.pending()}>
                   {releaseTask.pending() ? "Submitting..." : "Release capital"}
@@ -1034,10 +1037,12 @@ export default function AssetDetailTreasurySection(
             <form class="pm-market-form" onSubmit={handleDepositYieldSubmit}>
               <div class="pm-market-fields">
                 <label class="pm-field">
-                  <span class="pm-field__label">Amount</span>
+                  <span class="pm-field__label">Amount ({paymentTokenMeta().symbol})</span>
                   <input
                     class="pm-field__input"
                     type="text"
+                    inputMode="decimal"
+                    placeholder="90"
                     value={depositYieldDraft().amount}
                     onInput={event =>
                       setDepositYieldDraft(current => ({
@@ -1048,7 +1053,7 @@ export default function AssetDetailTreasurySection(
                   />
                 </label>
                 <label class="pm-field pm-field--full">
-                  <span class="pm-field__label">Data</span>
+                  <span class="pm-field__label">Optional data</span>
                   <input
                     class="pm-field__input"
                     type="text"
@@ -1062,6 +1067,11 @@ export default function AssetDetailTreasurySection(
                   />
                 </label>
               </div>
+              <p class="pm-market-feedback">
+                Input is display {paymentTokenMeta().symbol}. Reserved yield is tracked in the
+                payment token and converted to {` ${paymentTokenMeta().decimals}`}-decimal base
+                units on submit.
+              </p>
               <div class="pm-market-actions">
                 <button class="pm-button pm-button--primary" type="submit" disabled={depositYieldTask.pending()}>
                   {depositYieldTask.pending() ? "Submitting..." : "Deposit yield"}
@@ -1183,7 +1193,7 @@ export default function AssetDetailTreasurySection(
                   />
                 </label>
                 <label class="pm-field">
-                  <span class="pm-field__label">Amount</span>
+                  <span class="pm-field__label">Amount (raw token units)</span>
                   <input
                     class="pm-field__input"
                     type="text"
@@ -1211,6 +1221,11 @@ export default function AssetDetailTreasurySection(
                   />
                 </label>
               </div>
+              <p class="pm-market-feedback">
+                This route is token-agnostic. Enter the raw on-chain token amount for the selected
+                token address. If you are withdrawing {paymentTokenMeta().symbol}, use
+                {` ${paymentTokenMeta().decimals}`}-decimal base units.
+              </p>
               <div class="pm-market-actions">
                 <button class="pm-button pm-button--primary" type="submit" disabled={emergencyWithdrawTask.pending()}>
                   {emergencyWithdrawTask.pending() ? "Submitting..." : "Emergency withdraw"}

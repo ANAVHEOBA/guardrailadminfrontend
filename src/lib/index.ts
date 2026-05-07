@@ -4,6 +4,7 @@ export * from "./admin/index.ts";
 export * from "./asset/index.ts";
 export * from "./auth/index.ts";
 export * from "./compliance/index.ts";
+export * from "./contracts/index.ts";
 export * from "./faucet/index.ts";
 export * from "./health/index.ts";
 export * from "./market/index.ts";

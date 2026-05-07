@@ -1,4 +1,9 @@
-import type { AssetDetailResponse, AssetResponse, PaymentTokenDisplayMeta } from "~/lib";
+import {
+  formatBaseUnitsLabel,
+  type AssetDetailResponse,
+  type AssetResponse,
+  type PaymentTokenDisplayMeta,
+} from "~/lib";
 
 import {
   formatAssetTokenValue,
@@ -41,8 +46,13 @@ export default function AssetDetailSummaryGrid(props: AssetDetailSummaryGridProp
       />
       <SummaryCard
         label="Valuation NAV"
-        value={formatNumericString(props.detail?.valuation?.nav_per_token ?? "0")}
-        meta={`Updated ${formatDateTime(props.detail?.valuation?.updated_at ?? props.asset.updated_at)}`}
+        value={formatPaymentTokenValue(
+          props.detail?.valuation?.nav_per_token ?? null,
+          props.paymentTokenMeta,
+        )}
+        meta={`${formatBaseUnitsLabel(
+          props.detail?.valuation?.nav_per_token ?? null,
+        )} · Updated ${formatDateTime(props.detail?.valuation?.updated_at ?? props.asset.updated_at)}`}
       />
     </div>
   );

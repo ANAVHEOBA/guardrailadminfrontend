@@ -104,6 +104,14 @@ export interface AdminSetAssetTreasuryRequest {
   treasury_address: string;
 }
 
+export interface AdminSetFactoryComplianceRegistryRequest {
+  compliance_registry_address: string;
+}
+
+export interface AdminSetFactoryTreasuryRequest {
+  treasury_address: string;
+}
+
 export interface AdminControllerTransferRequest {
   from_wallet: string;
   to_wallet: string;
@@ -117,6 +125,24 @@ export interface AdminProcessRedemptionRequest {
   amount: string;
   recipient_wallet: string;
   data?: string | null;
+}
+
+export interface PendingRedemptionUser {
+  user_id: string;
+  wallet_address: string;
+  email: string | null;
+  display_name: string | null;
+  pending_amount: string;
+  last_redemption_at: IsoDateTimeString | null;
+}
+
+export interface PendingRedemptionsResponse {
+  asset_address: string;
+  asset_name: string;
+  asset_symbol: string;
+  asset_image_url: string | null;
+  total_pending_redemptions: string;
+  pending_redemptions: PendingRedemptionUser[];
 }
 
 export interface AssetPreviewRequest {
@@ -155,6 +181,7 @@ export interface AssetFactoryStatusResponse {
   factory_address: string;
   access_control_address: string;
   compliance_registry_address: string;
+  compliance_diamond_address: string;
   treasury_address: string;
   paused: boolean;
   total_assets_created: string;
@@ -197,6 +224,7 @@ export interface AssetResponse {
   redemption_price_per_token: string;
   treasury_address: string;
   compliance_registry_address: string;
+  compliance_diamond_address: string;
   payment_token_address: string;
   metadata_hash: string;
   holder_count: string;

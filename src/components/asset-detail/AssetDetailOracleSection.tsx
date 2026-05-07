@@ -3,6 +3,7 @@ import { Show, createEffect, createMemo, createSignal } from "solid-js";
 import AdminModal from "~/components/AdminModal";
 import { useAdminAuth } from "~/lib/admin-auth-context";
 import {
+  DEFAULT_PAYMENT_TOKEN_DISPLAY_META,
   oracleClient,
   readAdminToken,
   type AssetResponse,
@@ -10,14 +11,17 @@ import {
   type OracleTrustedOracleResponse,
   type OracleValuationResponse,
   type OracleValuationWriteResponse,
+  type PaymentTokenDisplayMeta,
 } from "~/lib";
 import { getErrorMessage } from "~/lib/api";
 import { useAsyncTask } from "~/lib/hooks/useAsyncTask";
 
 import {
   formatDateTime,
-  formatNumericString,
+  formatPaymentTokenBaseUnitsForInput,
+  formatPaymentTokenValueWithRaw,
   formatUnixTimestamp,
+  parseDisplayPaymentTokenAmountToBaseUnits,
   truncateMiddle,
 } from "./format";
 
@@ -33,6 +37,7 @@ type OracleModalView =
 interface AssetDetailOracleSectionProps {
   asset: AssetResponse;
   valuation: OracleValuationResponse | null;
+  paymentTokenMeta?: PaymentTokenDisplayMeta | null;
   onPricingUpdated?: (subscriptionPrice: string, redemptionPrice: string) => void;
   onValuationUpdated?: (valuation: OracleValuationResponse) => void;
 }
@@ -66,10 +71,17 @@ function requireTextValue(value: string, label: string) {
 
 function buildValuationDraft(
   valuation: OracleValuationResponse | null | undefined,
+  paymentTokenMeta: PaymentTokenDisplayMeta | null | undefined,
 ): ValuationDraft {
   return {
-    asset_value: valuation?.asset_value ?? "",
-    nav_per_token: valuation?.nav_per_token ?? "",
+    asset_value: formatPaymentTokenBaseUnitsForInput(
+      valuation?.asset_value,
+      paymentTokenMeta,
+    ),
+    nav_per_token: formatPaymentTokenBaseUnitsForInput(
+      valuation?.nav_per_token,
+      paymentTokenMeta,
+    ),
     reference_id: valuation?.reference_id_text ?? valuation?.reference_id ?? "",
   };
 }
@@ -77,12 +89,25 @@ function buildValuationDraft(
 function buildSyncPricingDraft(
   asset: AssetResponse,
   valuation: OracleValuationResponse | null | undefined,
+  paymentTokenMeta: PaymentTokenDisplayMeta | null | undefined,
 ): SyncPricingDraft {
   return {
-    asset_value: valuation?.asset_value ?? "",
-    nav_per_token: valuation?.nav_per_token ?? "",
-    subscription_price: asset.price_per_token,
-    redemption_price: asset.redemption_price_per_token,
+    asset_value: formatPaymentTokenBaseUnitsForInput(
+      valuation?.asset_value,
+      paymentTokenMeta,
+    ),
+    nav_per_token: formatPaymentTokenBaseUnitsForInput(
+      valuation?.nav_per_token,
+      paymentTokenMeta,
+    ),
+    subscription_price: formatPaymentTokenBaseUnitsForInput(
+      asset.price_per_token,
+      paymentTokenMeta,
+    ),
+    redemption_price: formatPaymentTokenBaseUnitsForInput(
+      asset.redemption_price_per_token,
+      paymentTokenMeta,
+    ),
     reference_id: valuation?.reference_id_text ?? valuation?.reference_id ?? "",
   };
 }
@@ -155,11 +180,12 @@ export default function AssetDetailOracleSection(props: AssetDetailOracleSection
   const [syncPricingError, setSyncPricingError] = createSignal<string | null>(null);
   const [anchorDocumentError, setAnchorDocumentError] = createSignal<string | null>(null);
   const [trustedOracleUpdateError, setTrustedOracleUpdateError] = createSignal<string | null>(null);
+  const paymentTokenMeta = () => props.paymentTokenMeta ?? DEFAULT_PAYMENT_TOKEN_DISPLAY_META;
   const [valuationDraft, setValuationDraft] = createSignal<ValuationDraft>(
-    buildValuationDraft(props.valuation),
+    buildValuationDraft(props.valuation, paymentTokenMeta()),
   );
   const [syncPricingDraft, setSyncPricingDraft] = createSignal<SyncPricingDraft>(
-    buildSyncPricingDraft(props.asset, props.valuation),
+    buildSyncPricingDraft(props.asset, props.valuation, paymentTokenMeta()),
   );
   const [documentLookupType, setDocumentLookupType] = createSignal("");
   const [anchorDocumentDraft, setAnchorDocumentDraft] = createSignal<AnchorDocumentDraft>(
@@ -201,8 +227,8 @@ export default function AssetDetailOracleSection(props: AssetDetailOracleSection
     setSyncPricingError(null);
     setAnchorDocumentError(null);
     setTrustedOracleUpdateError(null);
-    setValuationDraft(buildValuationDraft(props.valuation));
-    setSyncPricingDraft(buildSyncPricingDraft(props.asset, props.valuation));
+    setValuationDraft(buildValuationDraft(props.valuation, paymentTokenMeta()));
+    setSyncPricingDraft(buildSyncPricingDraft(props.asset, props.valuation, paymentTokenMeta()));
     setDocumentLookupType("");
     setAnchorDocumentDraft(buildAnchorDocumentDraft(null));
     setTrustedOracleAddress("");
@@ -225,8 +251,8 @@ export default function AssetDetailOracleSection(props: AssetDetailOracleSection
 
     try {
       const response = await valuationTask.run();
-      setValuationDraft(buildValuationDraft(response));
-      setSyncPricingDraft(buildSyncPricingDraft(props.asset, response));
+      setValuationDraft(buildValuationDraft(response, paymentTokenMeta()));
+      setSyncPricingDraft(buildSyncPricingDraft(props.asset, response, paymentTokenMeta()));
       return response;
     } catch (error) {
       setValuationError(getErrorMessage(error));
@@ -278,11 +304,13 @@ export default function AssetDetailOracleSection(props: AssetDetailOracleSection
     }
 
     if (view === "submit-valuation") {
-      setValuationDraft(buildValuationDraft(currentValuation()));
+      setValuationDraft(buildValuationDraft(currentValuation(), paymentTokenMeta()));
     }
 
     if (view === "sync-pricing") {
-      setSyncPricingDraft(buildSyncPricingDraft(props.asset, currentValuation()));
+      setSyncPricingDraft(
+        buildSyncPricingDraft(props.asset, currentValuation(), paymentTokenMeta()),
+      );
     }
 
     if (view === "fetch-document") {
@@ -317,8 +345,14 @@ export default function AssetDetailOracleSection(props: AssetDetailOracleSection
     try {
       const draft = valuationDraft();
       const response = await submitValuationTask.run(token, {
-        asset_value: requireTextValue(draft.asset_value, "Asset value"),
-        nav_per_token: requireTextValue(draft.nav_per_token, "NAV per token"),
+        asset_value: parseDisplayPaymentTokenAmountToBaseUnits(
+          requireTextValue(draft.asset_value, "Asset value"),
+          paymentTokenMeta(),
+        ),
+        nav_per_token: parseDisplayPaymentTokenAmountToBaseUnits(
+          requireTextValue(draft.nav_per_token, "NAV per token"),
+          paymentTokenMeta(),
+        ),
         reference_id: requireTextValue(draft.reference_id, "Reference ID"),
       });
       syncValuationWrite(response);
@@ -340,16 +374,32 @@ export default function AssetDetailOracleSection(props: AssetDetailOracleSection
 
     try {
       const draft = syncPricingDraft();
+      const assetValue = parseDisplayPaymentTokenAmountToBaseUnits(
+        requireTextValue(draft.asset_value, "Asset value"),
+        paymentTokenMeta(),
+      );
+      const navPerToken = parseDisplayPaymentTokenAmountToBaseUnits(
+        requireTextValue(draft.nav_per_token, "NAV per token"),
+        paymentTokenMeta(),
+      );
+      const subscriptionPrice = parseDisplayPaymentTokenAmountToBaseUnits(
+        requireTextValue(draft.subscription_price, "Subscription price"),
+        paymentTokenMeta(),
+      );
+      const redemptionPrice = parseDisplayPaymentTokenAmountToBaseUnits(
+        requireTextValue(draft.redemption_price, "Redemption price"),
+        paymentTokenMeta(),
+      );
       const response = await syncPricingTask.run(token, {
-        asset_value: requireTextValue(draft.asset_value, "Asset value"),
-        nav_per_token: requireTextValue(draft.nav_per_token, "NAV per token"),
-        subscription_price: requireTextValue(draft.subscription_price, "Subscription price"),
-        redemption_price: requireTextValue(draft.redemption_price, "Redemption price"),
+        asset_value: assetValue,
+        nav_per_token: navPerToken,
+        subscription_price: subscriptionPrice,
+        redemption_price: redemptionPrice,
         reference_id: requireTextValue(draft.reference_id, "Reference ID"),
       });
 
       syncValuationWrite(response);
-      props.onPricingUpdated?.(draft.subscription_price, draft.redemption_price);
+      props.onPricingUpdated?.(subscriptionPrice, redemptionPrice);
     } catch (error) {
       setSyncPricingError(getErrorMessage(error));
     }
@@ -429,6 +479,12 @@ export default function AssetDetailOracleSection(props: AssetDetailOracleSection
             Keep oracle actions attached to the asset. Read the live valuation, anchor reference
             documents, and sync pricing from one place.
           </p>
+          <p class="pm-asset-market__panel-subcopy">
+            Asset value tracks the total economic value of the underlying pool. NAV per token tracks
+            the fair value of one token. Both are stored in {paymentTokenMeta().symbol} settlement
+            units and move as valuation inputs, accrued yield, market pricing, and outstanding
+            supply change over time.
+          </p>
 
           <Show
             when={currentValuation()}
@@ -443,13 +499,19 @@ export default function AssetDetailOracleSection(props: AssetDetailOracleSection
                 <div class="pm-asset-market__stat-row">
                   <span class="pm-asset-market__stat-label">Asset value</span>
                   <span class="pm-asset-market__stat-value">
-                    {formatNumericString(valuation().asset_value)}
+                    {formatPaymentTokenValueWithRaw(
+                      valuation().asset_value,
+                      paymentTokenMeta(),
+                    )}
                   </span>
                 </div>
                 <div class="pm-asset-market__stat-row">
                   <span class="pm-asset-market__stat-label">NAV per token</span>
                   <span class="pm-asset-market__stat-value">
-                    {formatNumericString(valuation().nav_per_token)}
+                    {formatPaymentTokenValueWithRaw(
+                      valuation().nav_per_token,
+                      paymentTokenMeta(),
+                    )}
                   </span>
                 </div>
                 <div class="pm-asset-market__stat-row">
@@ -593,13 +655,19 @@ export default function AssetDetailOracleSection(props: AssetDetailOracleSection
                   <div class="pm-asset-market__stat-row">
                     <span class="pm-asset-market__stat-label">Asset value</span>
                     <span class="pm-asset-market__stat-value">
-                      {formatNumericString(valuation().asset_value)}
+                      {formatPaymentTokenValueWithRaw(
+                        valuation().asset_value,
+                        paymentTokenMeta(),
+                      )}
                     </span>
                   </div>
                   <div class="pm-asset-market__stat-row">
                     <span class="pm-asset-market__stat-label">NAV per token</span>
                     <span class="pm-asset-market__stat-value">
-                      {formatNumericString(valuation().nav_per_token)}
+                      {formatPaymentTokenValueWithRaw(
+                        valuation().nav_per_token,
+                        paymentTokenMeta(),
+                      )}
                     </span>
                   </div>
                   <div class="pm-asset-market__stat-row">
@@ -637,10 +705,12 @@ export default function AssetDetailOracleSection(props: AssetDetailOracleSection
             <form class="pm-market-form" onSubmit={handleSubmitValuation}>
               <div class="pm-market-fields">
                 <label class="pm-field">
-                  <span class="pm-field__label">Asset value</span>
+                  <span class="pm-field__label">Asset value ({paymentTokenMeta().symbol})</span>
                   <input
                     class="pm-field__input"
                     type="text"
+                    inputMode="decimal"
+                    placeholder="25000000"
                     value={valuationDraft().asset_value}
                     onInput={event =>
                       setValuationDraft(current => ({
@@ -651,10 +721,12 @@ export default function AssetDetailOracleSection(props: AssetDetailOracleSection
                   />
                 </label>
                 <label class="pm-field">
-                  <span class="pm-field__label">NAV per token</span>
+                  <span class="pm-field__label">NAV per token ({paymentTokenMeta().symbol})</span>
                   <input
                     class="pm-field__input"
                     type="text"
+                    inputMode="decimal"
+                    placeholder="1.017225"
                     value={valuationDraft().nav_per_token}
                     onInput={event =>
                       setValuationDraft(current => ({
@@ -679,6 +751,11 @@ export default function AssetDetailOracleSection(props: AssetDetailOracleSection
                   />
                 </label>
               </div>
+              <p class="pm-market-feedback">
+                Enter display {paymentTokenMeta().symbol}. Asset value is the total pool value and
+                NAV per token is the fair value of one full token. Both are converted to
+                {` ${paymentTokenMeta().decimals}`}-decimal base units on submit.
+              </p>
               <div class="pm-market-actions">
                 <button
                   class="pm-button pm-button--primary"
@@ -734,10 +811,12 @@ export default function AssetDetailOracleSection(props: AssetDetailOracleSection
             <form class="pm-market-form" onSubmit={handleSyncPricing}>
               <div class="pm-market-fields">
                 <label class="pm-field">
-                  <span class="pm-field__label">Asset value</span>
+                  <span class="pm-field__label">Asset value ({paymentTokenMeta().symbol})</span>
                   <input
                     class="pm-field__input"
                     type="text"
+                    inputMode="decimal"
+                    placeholder="25000000"
                     value={syncPricingDraft().asset_value}
                     onInput={event =>
                       setSyncPricingDraft(current => ({
@@ -748,10 +827,12 @@ export default function AssetDetailOracleSection(props: AssetDetailOracleSection
                   />
                 </label>
                 <label class="pm-field">
-                  <span class="pm-field__label">NAV per token</span>
+                  <span class="pm-field__label">NAV per token ({paymentTokenMeta().symbol})</span>
                   <input
                     class="pm-field__input"
                     type="text"
+                    inputMode="decimal"
+                    placeholder="1.017225"
                     value={syncPricingDraft().nav_per_token}
                     onInput={event =>
                       setSyncPricingDraft(current => ({
@@ -762,10 +843,14 @@ export default function AssetDetailOracleSection(props: AssetDetailOracleSection
                   />
                 </label>
                 <label class="pm-field">
-                  <span class="pm-field__label">Subscription price</span>
+                  <span class="pm-field__label">
+                    Subscription price ({paymentTokenMeta().symbol})
+                  </span>
                   <input
                     class="pm-field__input"
                     type="text"
+                    inputMode="decimal"
+                    placeholder="1.017225"
                     value={syncPricingDraft().subscription_price}
                     onInput={event =>
                       setSyncPricingDraft(current => ({
@@ -776,10 +861,14 @@ export default function AssetDetailOracleSection(props: AssetDetailOracleSection
                   />
                 </label>
                 <label class="pm-field">
-                  <span class="pm-field__label">Redemption price</span>
+                  <span class="pm-field__label">
+                    Redemption price ({paymentTokenMeta().symbol})
+                  </span>
                   <input
                     class="pm-field__input"
                     type="text"
+                    inputMode="decimal"
+                    placeholder="0.99728"
                     value={syncPricingDraft().redemption_price}
                     onInput={event =>
                       setSyncPricingDraft(current => ({
@@ -805,7 +894,10 @@ export default function AssetDetailOracleSection(props: AssetDetailOracleSection
                 </label>
               </div>
               <p class="pm-asset-market__modal-note">
-                Pricing values here are sent as raw on-chain contract values.
+                Enter display {paymentTokenMeta().symbol}. Asset value is total pool value, NAV per
+                token is fair value per token, and subscription/redemption are the actual settlement
+                prices users trade against. All four values are converted to
+                {` ${paymentTokenMeta().decimals}`}-decimal base units on submit.
               </p>
               <div class="pm-market-actions">
                 <button

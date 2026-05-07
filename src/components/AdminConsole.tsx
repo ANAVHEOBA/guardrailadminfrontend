@@ -15,6 +15,22 @@ export default function AdminConsole() {
     navigate("/admin/assets");
   };
 
+  const openRedemptionManager = () => {
+    navigate("/admin/redemptions");
+  };
+
+  const openContractsManager = () => {
+    navigate("/admin/contracts");
+  };
+
+  const openComplianceManager = () => {
+    navigate("/admin/compliance");
+  };
+
+  const openSystemManager = () => {
+    navigate("/admin/system");
+  };
+
   return (
     <>
       <AdminNavbar
@@ -34,6 +50,10 @@ export default function AdminConsole() {
             open={adminDrawerOpen()}
             onClose={() => setAdminDrawerOpen(false)}
             onOpenAssetManager={openAssetManager}
+            onOpenRedemptionManager={openRedemptionManager}
+            onOpenComplianceManager={openComplianceManager}
+            onOpenContractsManager={openContractsManager}
+            onOpenSystemManager={openSystemManager}
           />
         )}
       </Show>

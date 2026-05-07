@@ -217,6 +217,84 @@ export function formatPaymentTokenValueWithRaw(
   return `${settlement} · ${raw}`;
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function normalizePaymentTokenInteger(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = value.trim();
+
+  if (!/^-?\d+$/.test(normalized)) {
+    return null;
+  }
+
+  const negative = normalized.startsWith("-");
+  const digits = (negative ? normalized.slice(1) : normalized).replace(/^0+(?=\d)/, "") || "0";
+
+  return negative ? `-${digits}` : digits;
+}
+
+export function parseDisplayPaymentTokenAmountToBaseUnits(
+  value: string,
+  meta: PaymentTokenDisplayMeta | null | undefined = DEFAULT_PAYMENT_TOKEN_DISPLAY_META,
+): string {
+  const symbol = meta?.symbol?.trim() || DEFAULT_PAYMENT_TOKEN_DISPLAY_META.symbol;
+  const normalizedSymbol = escapeRegExp(symbol.toLowerCase());
+  const decimals = Math.max(0, meta?.decimals ?? DEFAULT_PAYMENT_TOKEN_DISPLAY_META.decimals);
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(new RegExp(`\\s*${normalizedSymbol}\\s*$`), "")
+    .replace(/,/g, "")
+    .trim();
+  const matcher = new RegExp(`^\\d+(\\.\\d{1,${decimals}})?$`);
+
+  if (!matcher.test(normalized)) {
+    throw new Error(
+      `Amount must be a valid ${symbol} value with up to ${decimals} decimals.`,
+    );
+  }
+
+  const [wholeRaw, fractionalRaw = ""] = normalized.split(".");
+  const whole = wholeRaw.replace(/^0+(?=\d)/, "");
+  const fractional = fractionalRaw.padEnd(decimals, "0");
+  const baseUnits = `${whole}${fractional}`.replace(/^0+/, "");
+
+  return baseUnits.length > 0 ? baseUnits : "0";
+}
+
+export function formatPaymentTokenBaseUnitsForInput(
+  value: string | null | undefined,
+  meta: PaymentTokenDisplayMeta | null | undefined = DEFAULT_PAYMENT_TOKEN_DISPLAY_META,
+): string {
+  const normalized = normalizePaymentTokenInteger(value);
+
+  if (!normalized) {
+    return "";
+  }
+
+  const negative = normalized.startsWith("-");
+  const digits = negative ? normalized.slice(1) : normalized;
+  const decimals = Math.max(0, meta?.decimals ?? DEFAULT_PAYMENT_TOKEN_DISPLAY_META.decimals);
+
+  if (decimals === 0) {
+    const whole = formatNumericString(digits);
+    return negative ? `-${whole}` : whole;
+  }
+
+  const padded = digits.padStart(decimals + 1, "0");
+  const wholeDigits = padded.slice(0, -decimals) || "0";
+  const fractionDigits = padded.slice(-decimals).replace(/0+$/, "");
+  const whole = formatNumericString(wholeDigits);
+  const amount = fractionDigits ? `${whole}.${fractionDigits}` : whole;
+
+  return negative ? `-${amount}` : amount;
+}
+
 export function parseNumericString(value: string | null | undefined): number | null {
   if (!value) {
     return null;

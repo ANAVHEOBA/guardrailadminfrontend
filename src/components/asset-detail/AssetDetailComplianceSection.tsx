@@ -21,8 +21,10 @@ import {
   formatAssetTokenValue,
   formatBooleanValue,
   formatDateTime,
+  formatPaymentTokenBaseUnitsForInput,
   formatNumericString,
   formatUnixTimestamp,
+  parseDisplayPaymentTokenAmountToBaseUnits,
   truncateMiddle,
 } from "./format";
 
@@ -88,58 +90,6 @@ function normalizeIntegerString(value: string | null | undefined): string | null
   return normalized.replace(/^0+(?=\d)/, "") || "0";
 }
 
-function parseDisplayTokenAmountToBaseUnits(
-  value: string,
-  meta: PaymentTokenDisplayMeta | null | undefined,
-): string {
-  const symbol = (meta?.symbol?.trim() || DEFAULT_PAYMENT_TOKEN_DISPLAY_META.symbol).toLowerCase();
-  const decimals = Math.max(0, meta?.decimals ?? DEFAULT_PAYMENT_TOKEN_DISPLAY_META.decimals);
-  const normalized = value
-    .trim()
-    .toLowerCase()
-    .replace(new RegExp(`\\s*${symbol}\\s*$`), "")
-    .replace(/,/g, "")
-    .trim();
-  const matcher = new RegExp(`^\\d+(\\.\\d{1,${decimals}})?$`);
-
-  if (!matcher.test(normalized)) {
-    throw new Error(
-      `Amount must be a valid ${symbol.toUpperCase()} value with up to ${decimals} decimals.`,
-    );
-  }
-
-  const [wholeRaw, fractionalRaw = ""] = normalized.split(".");
-  const whole = wholeRaw.replace(/^0+(?=\d)/, "");
-  const fractional = fractionalRaw.padEnd(decimals, "0");
-  const baseUnits = `${whole}${fractional}`.replace(/^0+/, "");
-
-  return baseUnits.length > 0 ? baseUnits : "0";
-}
-
-function formatTokenBaseUnitsForInput(
-  value: string | null | undefined,
-  meta: PaymentTokenDisplayMeta | null | undefined,
-): string {
-  const normalized = normalizeIntegerString(value);
-
-  if (!normalized) {
-    return "";
-  }
-
-  const decimals = Math.max(0, meta?.decimals ?? DEFAULT_PAYMENT_TOKEN_DISPLAY_META.decimals);
-
-  if (decimals === 0) {
-    return formatNumericString(normalized);
-  }
-
-  const padded = normalized.padStart(decimals + 1, "0");
-  const wholeDigits = padded.slice(0, -decimals) || "0";
-  const fractionDigits = padded.slice(-decimals).replace(/0+$/, "");
-  const whole = formatNumericString(wholeDigits);
-
-  return fractionDigits ? `${whole}.${fractionDigits}` : whole;
-}
-
 function ceilDivide(dividend: bigint, divisor: bigint): bigint {
   if (divisor <= BigInt(0)) {
     throw new Error("Asset subscription price must be greater than zero.");
@@ -153,7 +103,7 @@ function convertSettlementDisplayToRuleUnits(
   pricePerToken: string,
   meta: PaymentTokenDisplayMeta | null | undefined,
 ): string {
-  const paymentTokenBaseUnits = BigInt(parseDisplayTokenAmountToBaseUnits(value, meta));
+  const paymentTokenBaseUnits = BigInt(parseDisplayPaymentTokenAmountToBaseUnits(value, meta));
   const pricePerTokenUnits = BigInt(
     normalizeIntegerString(pricePerToken) ?? "0",
   );
@@ -225,9 +175,10 @@ function buildRulesDraft(
     subscriptions_enabled: rules?.subscriptions_enabled ?? false,
     redemptions_enabled: rules?.redemptions_enabled ?? false,
     requires_accreditation: rules?.requires_accreditation ?? false,
-    min_investment: formatTokenBaseUnitsForInput(minInvestmentSettlement, paymentTokenMeta) || "0",
+    min_investment:
+      formatPaymentTokenBaseUnitsForInput(minInvestmentSettlement, paymentTokenMeta) || "0",
     max_investor_balance:
-      formatTokenBaseUnitsForInput(maxInvestorBalanceSettlement, paymentTokenMeta) || "0",
+      formatPaymentTokenBaseUnitsForInput(maxInvestorBalanceSettlement, paymentTokenMeta) || "0",
   };
 }
 

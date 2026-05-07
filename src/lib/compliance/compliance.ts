@@ -39,6 +39,14 @@ export interface ComplianceClient {
     wallet: string,
     request: AdminUpsertComplianceInvestorRequest,
   ): Promise<AdminComplianceInvestorUpsertResponse>;
+  addInvestorToWhitelist(
+    token: string,
+    wallet: string,
+  ): Promise<AdminComplianceInvestorUpsertResponse>;
+  removeInvestorFromWhitelist(
+    token: string,
+    wallet: string,
+  ): Promise<AdminComplianceInvestorUpsertResponse>;
   batchUpsertInvestors(
     token: string,
     request: AdminBatchUpsertComplianceInvestorsRequest,
@@ -110,6 +118,28 @@ export function createComplianceClient(options: ComplianceClientOptions = {}): C
           method: "PUT",
           headers: withBearerToken(token),
           json: request,
+        },
+      );
+    },
+
+    addInvestorToWhitelist(token, wallet) {
+      return requestJson<AdminComplianceInvestorUpsertResponse>(
+        baseUrl,
+        `/admin/compliance/investors/${encodePathSegment(wallet)}/whitelist`,
+        {
+          method: "POST",
+          headers: withBearerToken(token),
+        },
+      );
+    },
+
+    removeInvestorFromWhitelist(token, wallet) {
+      return requestJson<AdminComplianceInvestorUpsertResponse>(
+        baseUrl,
+        `/admin/compliance/investors/${encodePathSegment(wallet)}/whitelist`,
+        {
+          method: "DELETE",
+          headers: withBearerToken(token),
         },
       );
     },

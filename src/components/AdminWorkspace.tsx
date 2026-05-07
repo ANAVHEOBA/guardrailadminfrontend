@@ -9,6 +9,10 @@ interface AdminWorkspaceProps {
   open: boolean;
   onClose: () => void;
   onOpenAssetManager: () => void;
+  onOpenRedemptionManager: () => void;
+  onOpenComplianceManager: () => void;
+  onOpenContractsManager: () => void;
+  onOpenSystemManager: () => void;
 }
 
 function CloseIcon() {
@@ -78,7 +82,7 @@ export default function AdminWorkspace(props: AdminWorkspaceProps) {
             <p class="pm-admin-drawer__eyebrow">Admin</p>
             <h2 class="pm-admin-drawer__title">Control panel</h2>
             <p class="pm-admin-drawer__copy">
-              Manage assets, compliance, treasury, and oracle operations.
+              Manage assets, contracts, and operational admin workflows.
             </p>
           </div>
 
@@ -114,13 +118,48 @@ export default function AdminWorkspace(props: AdminWorkspaceProps) {
             </span>
           </button>
 
+          <button
+            class="pm-admin-drawer__action pm-admin-drawer__action--primary"
+            type="button"
+            onClick={() => {
+              props.onClose();
+              props.onOpenRedemptionManager();
+            }}
+          >
+            <span class="pm-admin-drawer__action-title">Review Redemptions</span>
+            <span class="pm-admin-drawer__action-copy">
+              Inspect the pending redemption queue for investors.
+            </span>
+          </button>
+
           <div class="pm-admin-drawer__group">
             <p class="pm-admin-drawer__group-label">Modules</p>
 
-            <button class="pm-admin-drawer__action" type="button" disabled>
+            <button
+              class="pm-admin-drawer__action"
+              type="button"
+              onClick={() => {
+                props.onClose();
+                props.onOpenComplianceManager();
+              }}
+            >
               <span class="pm-admin-drawer__action-title">Compliance</span>
               <span class="pm-admin-drawer__action-copy">
                 Investor rules, whitelisting, and policy management.
+              </span>
+            </button>
+
+            <button
+              class="pm-admin-drawer__action"
+              type="button"
+              onClick={() => {
+                props.onClose();
+                props.onOpenContractsManager();
+              }}
+            >
+              <span class="pm-admin-drawer__action-title">Contracts</span>
+              <span class="pm-admin-drawer__action-copy">
+                Access control roles, multisig proposals, and signer operations.
               </span>
             </button>
 
@@ -138,10 +177,17 @@ export default function AdminWorkspace(props: AdminWorkspaceProps) {
               </span>
             </button>
 
-            <button class="pm-admin-drawer__action" type="button" disabled>
+            <button
+              class="pm-admin-drawer__action"
+              type="button"
+              onClick={() => {
+                props.onClose();
+                props.onOpenSystemManager();
+              }}
+            >
               <span class="pm-admin-drawer__action-title">System</span>
               <span class="pm-admin-drawer__action-copy">
-                Health checks, admin bootstrap, and uploads.
+                Health checks, admin bootstrap, profile reads, and uploads.
               </span>
             </button>
           </div>

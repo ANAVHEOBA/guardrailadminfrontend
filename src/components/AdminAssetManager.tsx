@@ -1,4 +1,4 @@
-import { For, Show, createSignal, onCleanup, onMount, type JSX } from "solid-js";
+import { For, Show, createEffect, createSignal, onCleanup, onMount, type JSX } from "solid-js";
 
 import {
   adminClient,
@@ -10,6 +10,9 @@ import {
   readAdminToken,
   type AdminCreateAssetRequest,
   type AdminImageUploadResponse,
+  type AdminSetFactoryComplianceRegistryRequest,
+  type AdminSetFactoryTreasuryRequest,
+  type AssetFactoryStatusResponse,
   type AssetTypeResponse,
   type AdminRegisterAssetTypeRequest,
   type AdminSetAssetPricingRequest,
@@ -130,6 +133,19 @@ function formatWalletLabel(walletAddress: string | null | undefined) {
   return shortenWalletAddress(walletAddress);
 }
 
+function readFactoryComplianceAddress(
+  factory: Pick<
+    AssetFactoryStatusResponse,
+    "compliance_diamond_address" | "compliance_registry_address"
+  > | null | undefined,
+) {
+  return (
+    factory?.compliance_diamond_address?.trim() ||
+    factory?.compliance_registry_address?.trim() ||
+    "Not available"
+  );
+}
+
 function buildPricingDraft(asset?: AssetResponse | null): PricingDraft {
   if (!asset) {
     return { ...EMPTY_PRICING_DRAFT };
@@ -235,9 +251,38 @@ function ActionCard(props: ActionCardProps) {
 
       <div class="pm-asset-action-card__footer">
         <span class="pm-asset-action-card__detail">{props.detail}</span>
-        <span class="pm-asset-action-card__cta">Open modal</span>
+        <span class="pm-asset-action-card__cta">Launch</span>
       </div>
     </button>
+  );
+}
+
+function DashboardStat(props: {
+  label: string;
+  value: string;
+  meta: string;
+}) {
+  return (
+    <div class="pm-asset-admin__stat">
+      <span class="pm-asset-admin__stat-label">{props.label}</span>
+      <strong class="pm-asset-admin__stat-value">{props.value}</strong>
+      <span class="pm-asset-admin__stat-meta">{props.meta}</span>
+    </div>
+  );
+}
+
+function InfrastructureFact(props: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div class="pm-asset-admin__fact-card">
+      <span class="pm-asset-admin__fact-label">{props.label}</span>
+      <strong class="pm-asset-admin__fact-value" title={props.value}>
+        {shortenWalletAddress(props.value)}
+      </strong>
+      <span class="pm-asset-admin__fact-meta">{props.value}</span>
+    </div>
   );
 }
 
@@ -387,6 +432,14 @@ function AdminGate(props: {
 export default function AdminAssetManager() {
   const auth = useAdminAuth();
   const factoryTask = useAsyncTask(() => assetClient.fetchFactoryStatus());
+  const setFactoryComplianceTask = useAsyncTask(
+    (token: string, payload: AdminSetFactoryComplianceRegistryRequest) =>
+      assetClient.setFactoryComplianceRegistry(token, payload),
+  );
+  const setFactoryTreasuryTask = useAsyncTask(
+    (token: string, payload: AdminSetFactoryTreasuryRequest) =>
+      assetClient.setFactoryTreasury(token, payload),
+  );
   const assetTypesTask = useAsyncTask(() => assetClient.listAssetTypes());
   const supportedCurrenciesTask = useAsyncTask(() => marketClient.fetchSupportedCurrencies());
   const listTask = useAsyncTask((query?: ListAssetsQuery) => assetClient.listAssets(query));
@@ -412,6 +465,7 @@ export default function AdminAssetManager() {
   const [createError, setCreateError] = createSignal<string | null>(null);
   const [createImageUploadError, setCreateImageUploadError] = createSignal<string | null>(null);
   const [createPricingQuoteError, setCreatePricingQuoteError] = createSignal<string | null>(null);
+  const [factoryConfigError, setFactoryConfigError] = createSignal<string | null>(null);
   const [pricingError, setPricingError] = createSignal<string | null>(null);
   const [createImageFile, setCreateImageFile] = createSignal<File | null>(null);
   const [createImagePreviewUrl, setCreateImagePreviewUrl] = createSignal<string | null>(null);
@@ -424,6 +478,9 @@ export default function AdminAssetManager() {
   const [createMarketRedemptionPrice, setCreateMarketRedemptionPrice] = createSignal("");
   const [createRawSubscriptionPrice, setCreateRawSubscriptionPrice] = createSignal("");
   const [createRawRedemptionPrice, setCreateRawRedemptionPrice] = createSignal("");
+  const [factoryComplianceRegistryAddress, setFactoryComplianceRegistryAddress] =
+    createSignal("");
+  const [factoryTreasuryAddress, setFactoryTreasuryAddress] = createSignal("");
   const [pricingDraft, setPricingDraft] = createSignal<PricingDraft>({
     ...EMPTY_PRICING_DRAFT,
   });
@@ -454,6 +511,17 @@ export default function AdminAssetManager() {
 
     return Array.from(options).sort((left, right) => left.localeCompare(right));
   };
+
+  createEffect(() => {
+    const factory = factoryTask.data();
+
+    if (!factory) {
+      return;
+    }
+
+    setFactoryComplianceRegistryAddress(readFactoryComplianceAddress(factory));
+    setFactoryTreasuryAddress(factory.treasury_address);
+  });
 
   function revokeCreateImagePreviewUrl() {
     const previewUrl = createImagePreviewUrl();
@@ -573,6 +641,10 @@ export default function AdminAssetManager() {
   }
 
   function openModal(view: AssetModalView) {
+    if (view === "factory") {
+      setFactoryConfigError(null);
+    }
+
     if (view === "pricing") {
       setPricingDraft({ ...EMPTY_PRICING_DRAFT });
       setPricingError(null);
@@ -630,6 +702,58 @@ export default function AdminAssetManager() {
       limit: readOptionalInteger(formData, "limit", "Limit"),
       offset: readOptionalInteger(formData, "offset", "Offset"),
     });
+  }
+
+  async function handleFactoryComplianceSubmit(event: SubmitEvent) {
+    event.preventDefault();
+    const token = adminToken();
+
+    if (!token) {
+      setFactoryConfigError("Connect an admin wallet first.");
+      auth.openAuthDialog();
+      return;
+    }
+
+    const formData = new FormData(event.currentTarget as HTMLFormElement);
+    setFactoryConfigError(null);
+    setFactoryComplianceTask.reset();
+
+    try {
+      await setFactoryComplianceTask.run(token, {
+        compliance_registry_address: readRequiredText(
+          formData,
+          "compliance_registry_address",
+          "Compliance registry address",
+        ),
+      });
+      await refreshFactoryStatus();
+    } catch (error) {
+      setFactoryConfigError(getErrorMessage(error));
+    }
+  }
+
+  async function handleFactoryTreasurySubmit(event: SubmitEvent) {
+    event.preventDefault();
+    const token = adminToken();
+
+    if (!token) {
+      setFactoryConfigError("Connect an admin wallet first.");
+      auth.openAuthDialog();
+      return;
+    }
+
+    const formData = new FormData(event.currentTarget as HTMLFormElement);
+    setFactoryConfigError(null);
+    setFactoryTreasuryTask.reset();
+
+    try {
+      await setFactoryTreasuryTask.run(token, {
+        treasury_address: readRequiredText(formData, "treasury_address", "Treasury address"),
+      });
+      await refreshFactoryStatus();
+    } catch (error) {
+      setFactoryConfigError(getErrorMessage(error));
+    }
   }
 
   async function handleRegisterTypeSubmit(event: SubmitEvent) {
@@ -835,53 +959,87 @@ export default function AdminAssetManager() {
       <div class="pm-asset-admin">
         <section class="pm-asset-admin__hero">
           <div class="pm-asset-admin__hero-copy">
-            <p class="pm-admin-section-header__eyebrow">Asset operations</p>
-            <h1 class="pm-asset-admin__title">Manage the full asset catalog without losing the flow.</h1>
-            <p class="pm-asset-admin__copy">
-              Public reads stay visible in the workspace, while write operations now open in dedicated
-              modals with admin wallet checks before any registry or pricing call is sent.
-            </p>
+            <div class="pm-asset-admin__masthead">
+              <div class="pm-asset-admin__masthead-copy">
+                <p class="pm-admin-section-header__eyebrow">Asset control plane</p>
+                <h1 class="pm-asset-admin__title">Run asset operations from a single operator workspace.</h1>
+                <p class="pm-asset-admin__copy">
+                  Inspect factory wiring, track catalog coverage, and launch guarded admin actions
+                  without digging through separate tools.
+                </p>
+              </div>
 
-            <div class="pm-asset-admin__chips">
-              <span class="pm-market-chip">
-                {factoryTask.data()?.total_assets_created ?? "0"} total assets
-              </span>
-              <span class="pm-market-chip">{assetTypes().length} registered types</span>
-              <span class="pm-market-chip">
-                {factoryTask.data()?.paused ? "Factory paused" : "Factory live"}
-              </span>
+              <div class="pm-asset-admin__actions">
+                <button
+                  class="pm-button pm-button--primary"
+                  type="button"
+                  onClick={() => openModal("create-asset")}
+                >
+                  New asset
+                </button>
+                <button
+                  class="pm-button pm-button--ghost"
+                  type="button"
+                  onClick={() => openModal("catalog")}
+                >
+                  Open catalog
+                </button>
+              </div>
             </div>
 
-            <div class="pm-asset-admin__actions">
-              <button class="pm-button pm-button--primary" type="button" onClick={() => openModal("create-asset")}>
-                Create asset
-              </button>
-              <button class="pm-button pm-button--ghost" type="button" onClick={() => openModal("catalog")}>
-                Browse catalog
-              </button>
+            <div class="pm-asset-admin__stats">
+              <DashboardStat
+                label="Factory assets"
+                value={factoryTask.data()?.total_assets_created ?? "0"}
+                meta="Registered through the live factory"
+              />
+              <DashboardStat
+                label="Asset types"
+                value={String(assetTypes().length)}
+                meta="Loaded from the current registry"
+              />
+              <DashboardStat
+                label="Catalog view"
+                value={String(previewAssets().length)}
+                meta="Assets in the active workspace snapshot"
+              />
+              <DashboardStat
+                label="Factory status"
+                value={factoryTask.data()?.paused ? "Paused" : "Live"}
+                meta="Global creation and wiring state"
+              />
             </div>
           </div>
 
           <aside class="pm-asset-admin__session">
-            <p class="pm-asset-admin__session-eyebrow">Admin auth</p>
+            <p class="pm-asset-admin__session-eyebrow">Operator session</p>
             <Show
               when={isAdminConnected()}
               fallback={
                 <>
-                  <h2 class="pm-asset-admin__session-title">Authentication required for write calls</h2>
+                  <span class="pm-asset-admin__session-status">Write access locked</span>
+                  <h2 class="pm-asset-admin__session-title">Authentication required</h2>
                   <p class="pm-asset-admin__session-copy">
-                    Asset reads are public. Registry setup, creation, and pricing updates require an
-                    allowlisted admin wallet session.
+                    Public reads stay available, but registry updates, asset creation, and pricing
+                    changes require an allowlisted admin wallet session.
                   </p>
-                  <button class="pm-button pm-button--primary" type="button" onClick={auth.openAuthDialog}>
+                  <button
+                    class="pm-button pm-button--primary"
+                    type="button"
+                    onClick={auth.openAuthDialog}
+                  >
                     Connect admin wallet
                   </button>
                 </>
               }
             >
+              <span class="pm-asset-admin__session-status pm-asset-admin__session-status--live">
+                Write access enabled
+              </span>
               <h2 class="pm-asset-admin__session-title">Authenticated and ready</h2>
               <p class="pm-asset-admin__session-copy">
-                Wallet session is active for admin-only endpoint flows and modal confirmations.
+                Wallet session is active for registry changes, asset creation, and modal-confirmed
+                pricing workflows.
               </p>
               <div class="pm-asset-admin__session-chips">
                 <span class="pm-market-chip">{adminWalletLabel()}</span>
@@ -891,86 +1049,100 @@ export default function AdminAssetManager() {
           </aside>
         </section>
 
-        <section class="pm-asset-admin__section">
+        <section class="pm-asset-admin__section pm-asset-admin__section--workspace">
           <div class="pm-tool-section__header">
             <div>
-              <p class="pm-admin-section-header__eyebrow">Public endpoints</p>
-              <h2 class="pm-tool-section__title">Read the live catalog before you write</h2>
+              <p class="pm-admin-section-header__eyebrow">Workspace</p>
+              <h2 class="pm-tool-section__title">Observe first, then execute</h2>
             </div>
             <p class="pm-admin-section-note">
-              These calls stay unauthenticated. Use them to validate factory wiring, search the catalog,
-              and pick the correct asset before pricing changes.
+              Public reads and guarded admin flows are grouped by intent so it is obvious where to
+              inspect live state versus where to take action.
             </p>
           </div>
 
-          <div class="pm-asset-action-grid">
-            <ActionCard
-              actionLabel="Public"
-              endpoint="GET /assets/factory"
-              title="Factory status"
-              copy="Inspect registry wiring, access control addresses, treasury wiring, and the global pause flag."
-              detail="Quick sanity check before any admin write"
-              onOpen={() => openModal("factory")}
-            />
-            <ActionCard
-              actionLabel="Public"
-              endpoint="GET /assets"
-              title="Catalog explorer"
-              copy="Search by query, type, state, featured status, and self-service availability in one place."
-              detail="Use results to launch pricing updates directly"
-              onOpen={() => openModal("catalog")}
-            />
+          <div class="pm-asset-admin__lane-grid">
+            <section class="pm-asset-admin__lane">
+              <div class="pm-asset-admin__lane-head">
+                <div>
+                  <p class="pm-asset-admin__lane-kicker">Observe</p>
+                  <h3 class="pm-asset-admin__lane-title">Validate live state</h3>
+                </div>
+                <span class="pm-market-chip">Public</span>
+              </div>
+              <p class="pm-asset-admin__lane-copy">
+                Confirm factory wiring and inspect catalog coverage before you queue a write flow.
+              </p>
+              <div class="pm-asset-action-stack">
+                <ActionCard
+                  actionLabel="Public"
+                  endpoint="GET /assets/factory"
+                  title="Factory status"
+                  copy="Inspect access control, treasury wiring, compliance wiring, and the global pause flag."
+                  detail="Best first check before any admin change"
+                  onOpen={() => openModal("factory")}
+                />
+                <ActionCard
+                  actionLabel="Public"
+                  endpoint="GET /assets"
+                  title="Catalog explorer"
+                  copy="Search by type, state, featured status, and self-service readiness from a single view."
+                  detail="Use the results to jump into pricing updates"
+                  onOpen={() => openModal("catalog")}
+                />
+              </div>
+            </section>
+
+            <section class="pm-asset-admin__lane pm-asset-admin__lane--admin">
+              <div class="pm-asset-admin__lane-head">
+                <div>
+                  <p class="pm-asset-admin__lane-kicker">Operate</p>
+                  <h3 class="pm-asset-admin__lane-title">Run guarded workflows</h3>
+                </div>
+                <span class="pm-market-chip">Admin</span>
+              </div>
+              <p class="pm-asset-admin__lane-copy">
+                Launch focused write flows with wallet-gated confirmation instead of managing state
+                inline.
+              </p>
+              <div class="pm-asset-action-stack">
+                <ActionCard
+                  actionLabel="Admin"
+                  endpoint="POST /admin/assets/types"
+                  title="Register asset type"
+                  copy="Add the implementation mapping required before new assets can be created."
+                  detail="Checked against the current registry list"
+                  onOpen={() => openModal("register-type")}
+                  tone="admin"
+                />
+                <ActionCard
+                  actionLabel="Admin"
+                  endpoint="POST /admin/assets"
+                  title="Create asset"
+                  copy="Create a new asset with supply controls, catalog metadata, and opening prices."
+                  detail="Uses backend asset types where available"
+                  onOpen={() => openModal("create-asset")}
+                  tone="admin"
+                />
+                <ActionCard
+                  actionLabel="Admin"
+                  endpoint="PUT /admin/assets/{asset_address}/pricing"
+                  title="Update pricing"
+                  copy="Change subscription and redemption pricing without navigating a long inline form."
+                  detail="Can open blank or prefilled from catalog results"
+                  onOpen={() => openPricingModal()}
+                  tone="admin"
+                />
+              </div>
+            </section>
           </div>
         </section>
 
-        <section class="pm-asset-admin__section">
-          <div class="pm-tool-section__header">
-            <div>
-              <p class="pm-admin-section-header__eyebrow">Admin endpoints</p>
-              <h2 class="pm-tool-section__title">Run guarded write workflows</h2>
-            </div>
-            <p class="pm-admin-section-note">
-              Each write operation opens in a dedicated modal and prompts for admin wallet auth when the
-              session is missing.
-            </p>
-          </div>
-
-          <div class="pm-asset-action-grid pm-asset-action-grid--admin">
-            <ActionCard
-              actionLabel="Admin"
-              endpoint="POST /admin/assets/types"
-              title="Register asset type"
-              copy="Add a new asset implementation mapping before assets can be created against it."
-              detail="Validates against the current registered type list"
-              onOpen={() => openModal("register-type")}
-              tone="admin"
-            />
-            <ActionCard
-              actionLabel="Admin"
-              endpoint="POST /admin/assets"
-              title="Create asset"
-              copy="Create a new asset with catalog metadata, supply controls, visibility, and initial prices."
-              detail="Uses backend asset types where available"
-              onOpen={() => openModal("create-asset")}
-              tone="admin"
-            />
-            <ActionCard
-              actionLabel="Admin"
-              endpoint="PUT /admin/assets/{asset_address}/pricing"
-              title="Update pricing"
-              copy="Change subscription and redemption pricing without digging through inline forms."
-              detail="Can be launched blank or prefilled from catalog results"
-              onOpen={() => openPricingModal()}
-              tone="admin"
-            />
-          </div>
-        </section>
-
-        <section class="pm-asset-admin__preview-grid">
+        <section class="pm-asset-admin__overview-grid">
           <article class="pm-asset-snapshot-card">
             <div class="pm-asset-snapshot-card__header">
               <div>
-                <p class="pm-market-card__eyebrow">Factory snapshot</p>
+                <p class="pm-market-card__eyebrow">Factory control plane</p>
                 <h3 class="pm-market-card__title">Current on-chain wiring</h3>
               </div>
               <button
@@ -989,35 +1161,27 @@ export default function AdminAssetManager() {
                 <p class="pm-market-feedback">
                   {factoryTask.error()
                     ? getErrorMessage(factoryTask.error())
-                    : "Factory status will appear here after the initial fetch completes."}
+                    : "Factory status appears here after the initial fetch completes."}
                 </p>
               }
             >
-              <div class="pm-market-result__grid">
-                <div>
-                  <span class="pm-market-result__label">Factory</span>
-                  <span class="pm-market-result__value">
-                    {factoryTask.data()!.factory_address}
-                  </span>
-                </div>
-                <div>
-                  <span class="pm-market-result__label">Access control</span>
-                  <span class="pm-market-result__value">
-                    {factoryTask.data()!.access_control_address}
-                  </span>
-                </div>
-                <div>
-                  <span class="pm-market-result__label">Treasury</span>
-                  <span class="pm-market-result__value">
-                    {factoryTask.data()!.treasury_address}
-                  </span>
-                </div>
-                <div>
-                  <span class="pm-market-result__label">Compliance registry</span>
-                  <span class="pm-market-result__value">
-                    {factoryTask.data()!.compliance_registry_address}
-                  </span>
-                </div>
+              <div class="pm-asset-admin__facts-grid">
+                <InfrastructureFact
+                  label="Factory"
+                  value={factoryTask.data()!.factory_address}
+                />
+                <InfrastructureFact
+                  label="Access control"
+                  value={factoryTask.data()!.access_control_address}
+                />
+                <InfrastructureFact
+                  label="Treasury"
+                  value={factoryTask.data()!.treasury_address}
+                />
+                <InfrastructureFact
+                  label="Compliance registry / diamond"
+                  value={readFactoryComplianceAddress(factoryTask.data())}
+                />
               </div>
             </Show>
           </article>
@@ -1025,12 +1189,19 @@ export default function AdminAssetManager() {
           <article class="pm-asset-snapshot-card">
             <div class="pm-asset-snapshot-card__header">
               <div>
-                <p class="pm-market-card__eyebrow">Catalog snapshot</p>
+                <p class="pm-market-card__eyebrow">Catalog pulse</p>
                 <h3 class="pm-market-card__title">Recent assets</h3>
               </div>
-              <button class="pm-button pm-button--ghost" type="button" onClick={() => openModal("catalog")}>
-                Open explorer
-              </button>
+              <div class="pm-asset-modal__summary">
+                <span class="pm-market-chip">{previewAssets().length} in view</span>
+                <button
+                  class="pm-button pm-button--ghost"
+                  type="button"
+                  onClick={() => openModal("catalog")}
+                >
+                  Open explorer
+                </button>
+              </div>
             </div>
 
             <Show when={listError()}>
@@ -1040,9 +1211,34 @@ export default function AdminAssetManager() {
             <Show
               when={previewAssets().length > 0}
               fallback={
-                <p class="pm-market-feedback">
-                  {listTask.pending() ? "Loading recent assets..." : "No assets found yet."}
-                </p>
+                <div class="pm-asset-admin__empty">
+                  <p class="pm-asset-admin__empty-title">
+                    {listTask.pending() ? "Loading recent assets..." : "No assets in the current view"}
+                  </p>
+                  <p class="pm-asset-admin__empty-copy">
+                    {listTask.pending()
+                      ? "The workspace is pulling the latest catalog snapshot."
+                      : "Create the first asset or open the explorer to adjust the catalog filters."}
+                  </p>
+                  <div class="pm-asset-admin__empty-actions">
+                    <button
+                      class="pm-button pm-button--ghost"
+                      type="button"
+                      onClick={() => openModal("catalog")}
+                    >
+                      Browse catalog
+                    </button>
+                    <Show when={isAdminConnected()}>
+                      <button
+                        class="pm-button pm-button--primary"
+                        type="button"
+                        onClick={() => openModal("create-asset")}
+                      >
+                        Create asset
+                      </button>
+                    </Show>
+                  </div>
+                </div>
               }
             >
               <div class="pm-asset-preview-grid">
@@ -1065,7 +1261,7 @@ export default function AdminAssetManager() {
         onClose={() => setActiveModal(null)}
         eyebrow="Public endpoint"
         title="Factory status"
-        subtitle="Fetch the current factory, registry, treasury, and pause-state snapshot."
+        subtitle="Fetch the current factory, compliance wiring, treasury, and pause-state snapshot."
       >
         <div class="pm-asset-modal-stack">
           <div class="pm-market-actions pm-market-actions--split">
@@ -1115,14 +1311,121 @@ export default function AdminAssetManager() {
                   <span class="pm-market-result__value">{factoryTask.data()!.treasury_address}</span>
                 </div>
                 <div>
-                  <span class="pm-market-result__label">Compliance registry</span>
+                  <span class="pm-market-result__label">Compliance registry / diamond</span>
                   <span class="pm-market-result__value">
-                    {factoryTask.data()!.compliance_registry_address}
+                    {readFactoryComplianceAddress(factoryTask.data())}
                   </span>
                 </div>
               </div>
             </div>
           </Show>
+
+          <AdminGate
+            connected={isAdminConnected()}
+            walletLabel={adminWalletLabel()}
+            onConnect={auth.openAuthDialog}
+          >
+            <div class="pm-tool-section__grid">
+              <section class="pm-market-card">
+                <div class="pm-market-card__header">
+                  <div>
+                    <p class="pm-market-card__eyebrow">
+                      PUT /admin/assets/factory/compliance-registry
+                    </p>
+                    <h3 class="pm-market-card__title">Set factory compliance registry</h3>
+                  </div>
+                  <span class="pm-market-card__hint">Admin only</span>
+                </div>
+                <p class="pm-market-card__copy">
+                  Update the factory-level compliance registry/dynamic diamond target used for new
+                  asset wiring.
+                </p>
+                <form class="pm-market-form" onSubmit={handleFactoryComplianceSubmit}>
+                  <div class="pm-market-fields">
+                    <label class="pm-field pm-field--full">
+                      <span class="pm-field__label">Compliance registry address</span>
+                      <input
+                        class="pm-field__input"
+                        name="compliance_registry_address"
+                        type="text"
+                        placeholder="0x..."
+                        value={factoryComplianceRegistryAddress()}
+                        onInput={event =>
+                          setFactoryComplianceRegistryAddress(event.currentTarget.value)
+                        }
+                        required
+                      />
+                    </label>
+                  </div>
+                  <div class="pm-market-actions">
+                    <button
+                      class="pm-button pm-button--primary"
+                      type="submit"
+                      disabled={setFactoryComplianceTask.pending() || !adminToken()}
+                    >
+                      {setFactoryComplianceTask.pending()
+                        ? "Updating..."
+                        : "Update compliance registry"}
+                    </button>
+                  </div>
+                </form>
+              </section>
+
+              <section class="pm-market-card">
+                <div class="pm-market-card__header">
+                  <div>
+                    <p class="pm-market-card__eyebrow">PUT /admin/assets/factory/treasury</p>
+                    <h3 class="pm-market-card__title">Set factory treasury</h3>
+                  </div>
+                  <span class="pm-market-card__hint">Admin only</span>
+                </div>
+                <p class="pm-market-card__copy">
+                  Update the treasury address that newly created assets inherit from the factory.
+                </p>
+                <form class="pm-market-form" onSubmit={handleFactoryTreasurySubmit}>
+                  <div class="pm-market-fields">
+                    <label class="pm-field pm-field--full">
+                      <span class="pm-field__label">Treasury address</span>
+                      <input
+                        class="pm-field__input"
+                        name="treasury_address"
+                        type="text"
+                        placeholder="0x..."
+                        value={factoryTreasuryAddress()}
+                        onInput={event => setFactoryTreasuryAddress(event.currentTarget.value)}
+                        required
+                      />
+                    </label>
+                  </div>
+                  <div class="pm-market-actions">
+                    <button
+                      class="pm-button pm-button--primary"
+                      type="submit"
+                      disabled={setFactoryTreasuryTask.pending() || !adminToken()}
+                    >
+                      {setFactoryTreasuryTask.pending() ? "Updating..." : "Update treasury"}
+                    </button>
+                  </div>
+                </form>
+              </section>
+            </div>
+
+            <Show when={factoryConfigError()}>
+              <p class="pm-market-feedback pm-market-feedback--error">{factoryConfigError()}</p>
+            </Show>
+
+            <Show when={setFactoryComplianceTask.data()}>
+              <p class="pm-market-feedback pm-market-feedback--success">
+                Compliance registry updated. TX: {setFactoryComplianceTask.data()!.tx_hash}
+              </p>
+            </Show>
+
+            <Show when={setFactoryTreasuryTask.data()}>
+              <p class="pm-market-feedback pm-market-feedback--success">
+                Treasury updated. TX: {setFactoryTreasuryTask.data()!.tx_hash}
+              </p>
+            </Show>
+          </AdminGate>
         </div>
       </AdminModal>
 
