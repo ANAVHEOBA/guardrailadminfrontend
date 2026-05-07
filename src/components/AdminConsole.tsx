@@ -19,6 +19,10 @@ export default function AdminConsole() {
     navigate("/admin/redemptions");
   };
 
+  const openAssetRequestManager = () => {
+    navigate("/admin/asset-requests");
+  };
+
   const openContractsManager = () => {
     navigate("/admin/contracts");
   };
@@ -51,6 +55,7 @@ export default function AdminConsole() {
             onClose={() => setAdminDrawerOpen(false)}
             onOpenAssetManager={openAssetManager}
             onOpenRedemptionManager={openRedemptionManager}
+            onOpenAssetRequestManager={openAssetRequestManager}
             onOpenComplianceManager={openComplianceManager}
             onOpenContractsManager={openContractsManager}
             onOpenSystemManager={openSystemManager}

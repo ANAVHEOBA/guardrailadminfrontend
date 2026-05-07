@@ -10,6 +10,7 @@ interface AdminWorkspaceProps {
   onClose: () => void;
   onOpenAssetManager: () => void;
   onOpenRedemptionManager: () => void;
+  onOpenAssetRequestManager: () => void;
   onOpenComplianceManager: () => void;
   onOpenContractsManager: () => void;
   onOpenSystemManager: () => void;
@@ -129,6 +130,20 @@ export default function AdminWorkspace(props: AdminWorkspaceProps) {
             <span class="pm-admin-drawer__action-title">Review Redemptions</span>
             <span class="pm-admin-drawer__action-copy">
               Inspect the pending redemption queue for investors.
+            </span>
+          </button>
+
+          <button
+            class="pm-admin-drawer__action pm-admin-drawer__action--primary"
+            type="button"
+            onClick={() => {
+              props.onClose();
+              props.onOpenAssetRequestManager();
+            }}
+          >
+            <span class="pm-admin-drawer__action-title">Asset Requests</span>
+            <span class="pm-admin-drawer__action-copy">
+              Review issuer submissions, change status, and deploy approved requests.
             </span>
           </button>
 
